@@ -1,1 +1,0 @@
-static const char *petscconfigureoptions = "PETSC_DIR=/home/biswajit/Downloads/petsc-3.11.3 PETSC_ARCH=linux-gnu-c-debug --prefix=/home/biswajit/project/sFVM/source/ThirdParty/petsc --with-cc=gcc --with-cxx=g++ --with-fc=gfortran --download-fblaslapack --download-mpich";
