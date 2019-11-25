@@ -1,0 +1,826 @@
+<center><a href="ex3.c">Actual source code: ex3.c</a></center><br>
+
+<html>
+<head> <link rel="canonical" href="http://www.mcs.anl.gov/petsc/petsc-current/src/dm/impls/stag/examples/tutorials/ex3.c.html" />
+<title></title>
+<meta name="generator" content="c2html 0.9.4">
+<meta name="date" content="2019-06-26T21:29:49+00:00">
+</head>
+
+<body bgcolor="#FFFFFF">
+   <div id="version" align=right><b>petsc-3.11.3 2019-06-26</b></div>
+   <div id="bugreport" align=right><a href="mailto:petsc-maint@mcs.anl.gov?subject=Typo or Error in Documentation &body=Please describe the typo or error in the documentation: petsc-3.11.3 v3.11.3 src/dm/impls/stag/examples/tutorials/ex3.c.html "><small>Report Typos and Errors</small></a></div>
+<pre width="80">
+<a name="line1">  1: </a>static char help[] = <font color="#666666">"Solve a toy 3D problem on a staggered grid\n\n"</font>;
+<a name="line2">  2: </a><font color="#B22222">/*</font>
+
+<a name="line4">  4: </a><font color="#B22222">  To demonstrate the basic functionality of DMStag, solves an isoviscous</font>
+<a name="line5">  5: </a><font color="#B22222">  incompressible Stokes problem on a rectangular 3D domain.</font>
+
+<a name="line7">  7: </a><font color="#B22222">  u_{xx} + u_{yy} + u_{zz} - p_x = f^x</font>
+<a name="line8">  8: </a><font color="#B22222">  v_{xx} + v_{yy} + u_{zz} - p_y = f^y</font>
+<a name="line9">  9: </a><font color="#B22222">  w_{xx} + w_{yy} + w_{zz} - p_y = f^z</font>
+<a name="line10"> 10: </a><font color="#B22222">  u_x    + v_y    + w_z          = g</font>
+
+<a name="line12"> 12: </a><font color="#B22222">  g = 0 for the physical case.</font>
+
+<a name="line14"> 14: </a><font color="#B22222">  Boundary conditions give prescribed flow perpendicular to the boundaries,</font>
+<a name="line15"> 15: </a><font color="#B22222">  and zero derivative perpendicular to them (free slip). This involves</font>
+<a name="line16"> 16: </a><font color="#B22222">  using a modifed stencil at the boundaries. Another option would be to</font>
+<a name="line17"> 17: </a><font color="#B22222">  use <a href="../../../../../../docs/manualpages/DM/DMBoundaryType.html#DMBoundaryType">DM_BOUNDARY_GHOSTED</a> in <a href="../../../../../../docs/manualpages/DMSTAG/DMStagCreate3d.html#DMStagCreate3d">DMStagCreate3d</a>() and a matrix-free operator (<a href="../../../../../../docs/manualpages/Mat/MATSHELL.html#MATSHELL">MATSHELL</a>)</font>
+<a name="line18"> 18: </a><font color="#B22222">  making use of the uniformly-available ghost layer.</font>
+
+<a name="line20"> 20: </a><font color="#B22222">  Use the -pinpressure option to fix a pressure node, instead of providing</font>
+<a name="line21"> 21: </a><font color="#B22222">  a constant-pressure nullspace. This allows use of direct solvers, e.g. to</font>
+<a name="line22"> 22: </a><font color="#B22222">  use UMFPACK,</font>
+
+<a name="line24"> 24: </a><font color="#B22222">     ./ex3 -pinpressure 1 -pc_type lu -pc_factor_mat_solver_type umfpack</font>
+
+<a name="line26"> 26: </a><font color="#B22222">*/</font>
+<a name="line27"> 27: </a> #include <A href="../../../../../../include/petscdm.h.html">&lt;petscdm.h&gt;</A>
+<a name="line28"> 28: </a> #include <A href="../../../../../../include/petscksp.h.html">&lt;petscksp.h&gt;</A>
+<a name="line29"> 29: </a> #include <A href="../../../../../../include/petscdmstag.h.html">&lt;petscdmstag.h&gt;</A>
+
+<a name="line31"> 31: </a><font color="#B22222">/* Shorter, more convenient names for <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMStagStencilLocation</a> entries */</font>
+<a name="line32"> 32: </a><strong><font color="#228B22">#define BACK_DOWN_LEFT   <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_BACK_DOWN_LEFT</a></font></strong>
+<a name="line33"> 33: </a><strong><font color="#228B22">#define BACK_DOWN        <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_BACK_DOWN</a></font></strong>
+<a name="line34"> 34: </a><strong><font color="#228B22">#define BACK_DOWN_RIGHT  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_BACK_DOWN_RIGHT</a></font></strong>
+<a name="line35"> 35: </a><strong><font color="#228B22">#define BACK_LEFT        <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_BACK_LEFT</a></font></strong>
+<a name="line36"> 36: </a><strong><font color="#228B22">#define BACK             <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_BACK</a></font></strong>
+<a name="line37"> 37: </a><strong><font color="#228B22">#define BACK_RIGHT       <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_BACK_RIGHT</a></font></strong>
+<a name="line38"> 38: </a><strong><font color="#228B22">#define BACK_UP_LEFT     <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_BACK_UP_LEFT</a></font></strong>
+<a name="line39"> 39: </a><strong><font color="#228B22">#define BACK_UP          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_BACK_UP</a></font></strong>
+<a name="line40"> 40: </a><strong><font color="#228B22">#define BACK_UP_RIGHT    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_BACK_UP_RIGHT</a></font></strong>
+<a name="line41"> 41: </a><strong><font color="#228B22">#define DOWN_LEFT        <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_DOWN_LEFT</a></font></strong>
+<a name="line42"> 42: </a><strong><font color="#228B22">#define DOWN             <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_DOWN</a></font></strong>
+<a name="line43"> 43: </a><strong><font color="#228B22">#define DOWN_RIGHT       <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_DOWN_RIGHT</a></font></strong>
+<a name="line44"> 44: </a><strong><font color="#228B22">#define LEFT             <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_LEFT</a></font></strong>
+<a name="line45"> 45: </a><strong><font color="#228B22">#define ELEMENT          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_ELEMENT</a></font></strong>
+<a name="line46"> 46: </a><strong><font color="#228B22">#define RIGHT            <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_RIGHT</a></font></strong>
+<a name="line47"> 47: </a><strong><font color="#228B22">#define UP_LEFT          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_UP_LEFT</a></font></strong>
+<a name="line48"> 48: </a><strong><font color="#228B22">#define UP               <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_UP</a></font></strong>
+<a name="line49"> 49: </a><strong><font color="#228B22">#define UP_RIGHT         <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_UP_RIGHT</a></font></strong>
+<a name="line50"> 50: </a><strong><font color="#228B22">#define FRONT_DOWN_LEFT  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_FRONT_DOWN_LEFT</a></font></strong>
+<a name="line51"> 51: </a><strong><font color="#228B22">#define FRONT_DOWN       <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_FRONT_DOWN</a></font></strong>
+<a name="line52"> 52: </a><strong><font color="#228B22">#define FRONT_DOWN_RIGHT <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_FRONT_DOWN_RIGHT</a></font></strong>
+<a name="line53"> 53: </a><strong><font color="#228B22">#define FRONT_LEFT       <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_FRONT_LEFT</a></font></strong>
+<a name="line54"> 54: </a><strong><font color="#228B22">#define FRONT            <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_FRONT</a></font></strong>
+<a name="line55"> 55: </a><strong><font color="#228B22">#define FRONT_RIGHT      <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_FRONT_RIGHT</a></font></strong>
+<a name="line56"> 56: </a><strong><font color="#228B22">#define FRONT_UP_LEFT    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_FRONT_UP_LEFT</a></font></strong>
+<a name="line57"> 57: </a><strong><font color="#228B22">#define FRONT_UP         <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_FRONT_UP</a></font></strong>
+<a name="line58"> 58: </a><strong><font color="#228B22">#define FRONT_UP_RIGHT   <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilLocation.html#DMStagStencilLocation">DMSTAG_FRONT_UP_RIGHT</a></font></strong>
+
+<a name="line60"> 60: </a><strong><font color="#4169E1">static <a href="../../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a> CreateReferenceSolution(<a href="../../../../../../docs/manualpages/DM/DM.html#DM">DM</a>,<a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a>*)</font></strong>;
+<a name="line61"> 61: </a><strong><font color="#4169E1">static <a href="../../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a> CreateSystem(<a href="../../../../../../docs/manualpages/DM/DM.html#DM">DM</a>,<a href="../../../../../../docs/manualpages/Mat/Mat.html#Mat">Mat</a>*,<a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a>*,<a href="../../../../../../docs/manualpages/Sys/PetscBool.html#PetscBool">PetscBool</a>)</font></strong>;
+<a name="line62"> 62: </a><strong><font color="#4169E1">static <a href="../../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a> AttachNullspace(<a href="../../../../../../docs/manualpages/DM/DM.html#DM">DM</a>,<a href="../../../../../../docs/manualpages/Mat/Mat.html#Mat">Mat</a>)</font></strong>;
+<a name="line63"> 63: </a><strong><font color="#4169E1">static <a href="../../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a> CheckSolution(<a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a>,<a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a>)</font></strong>;
+
+<a name="line65"> 65: </a><font color="#B22222">/* Manufactured solution. Chosen to be higher order than can be solved exactly,</font>
+<a name="line66"> 66: </a><font color="#B22222">and to have a zero derivative for flow parallel to the boundaries. That is,</font>
+<a name="line67"> 67: </a><font color="#B22222"><strong></font><font color="#4169E1">d(ux)</font></strong>/dy = 0 at the top and bottom boundaries, and d(uy)/dx = 0 at the right
+<a name="line68"> 68: </a>and left boundaries.
+<a name="line69"> 69: </a>These expressions could be made more interesting with more z terms,
+<a name="line70"> 70: </a>and convergence could be confirmed.  */
+
+<a name="line72"> 72: </a><strong><font color="#4169E1"><a name="uxRef"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> uxRef(<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> x,<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> y, <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> z)</font></strong> {<font color="#4169E1">return</font> 0.0*x + y*y - 2.0*y*y*y + y*y*y*y + 0.0*z;}
+<a name="line73"> 73: </a><strong><font color="#4169E1"><a name="uyRef"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> uyRef(<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> x,<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> y, <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> z)</font></strong> {<font color="#4169E1">return</font> x*x - 2.0*x*x*x + x*x*x*x +0.0*y + 0.0*z;}
+<a name="line74"> 74: </a><strong><font color="#4169E1"><a name="uzRef"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> uzRef(<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> x,<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> y, <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> z)</font></strong> {<font color="#4169E1">return</font> 0.0*x + 0.0*y + 0.0*z + 1.0;}
+<a name="line75"> 75: </a><strong><font color="#4169E1"><a name="pRef"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> pRef (<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> x,<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> y, <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> z)</font></strong> {<font color="#4169E1">return</font> -1.0*(x-0.5) + -3.0/2.0*y*y + 0.5 -2.0*(z-1.0);} <font color="#B22222">/* zero integral */</font>
+<a name="line76"> 76: </a><strong><font color="#4169E1"><a name="fx"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> fx   (<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> x,<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> y, <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> z)</font></strong> {<font color="#4169E1">return</font> 0.0*x + 2.0 -12.0*y + 12.0*y*y + 0.0*z + 1.0;}
+<a name="line77"> 77: </a><strong><font color="#4169E1"><a name="fy"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> fy   (<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> x,<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> y, <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> z)</font></strong> {<font color="#4169E1">return</font> 2.0 -12.0*x + 12.0*x*x + 3.0*y + 0.0*z;}
+<a name="line78"> 78: </a><strong><font color="#4169E1"><a name="fz"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> fz   (<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> x,<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> y, <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> z)</font></strong> {<font color="#4169E1">return</font> 0.0*x + 0.0*y + 0.0*z + 2.0;}
+<a name="line79"> 79: </a><strong><font color="#4169E1"><a name="g"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> g    (<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> x,<a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> y, <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> z)</font></strong> {<font color="#4169E1">return</font> 0.0*x + 0.0*y + 0.0*z + 0.0;}
+
+<a name="line81"> 81: </a><strong><font color="#4169E1"><a name="main"></a>int main(int argc,char **argv)</font></strong>
+<a name="line82"> 82: </a>{
+<a name="line84"> 84: </a>  <a href="../../../../../../docs/manualpages/DM/DM.html#DM">DM</a>             dmSol;
+<a name="line85"> 85: </a>  <a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a>            sol,solRef,rhs;
+<a name="line86"> 86: </a>  <a href="../../../../../../docs/manualpages/Mat/Mat.html#Mat">Mat</a>            A;
+<a name="line87"> 87: </a>  <a href="../../../../../../docs/manualpages/KSP/KSP.html#KSP">KSP</a>            ksp;
+<a name="line88"> 88: </a>  <a href="../../../../../../docs/manualpages/PC/PC.html#PC">PC</a>             pc;
+<a name="line89"> 89: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscBool.html#PetscBool">PetscBool</a>      pinPressure;
+
+<a name="line91"> 91: </a>  <font color="#B22222">/* Initialize PETSc and process command line arguments */</font>
+<a name="line92"> 92: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscInitialize.html#PetscInitialize">PetscInitialize</a>(&amp;argc,&amp;argv,(char*)0,help);<font color="#4169E1">if</font> (ierr) <font color="#4169E1">return</font> ierr;
+<a name="line93"> 93: </a>  pinPressure = <a href="../../../../../../docs/manualpages/Sys/PETSC_TRUE.html#PETSC_TRUE">PETSC_TRUE</a>;
+<a name="line94"> 94: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscOptionsGetBool.html#PetscOptionsGetBool">PetscOptionsGetBool</a>(NULL,NULL,<font color="#666666">"-pinpressure"</font>,&amp;pinPressure,NULL);
+
+<a name="line96"> 96: </a>  <font color="#B22222">/* Create 3D DMStag for the solution, and set up. */</font>
+<a name="line97"> 97: </a>  {
+<a name="line98"> 98: </a>    const <a href="../../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a> dof0 = 0, dof1 = 0,dof2 = 1, dof3 = 1; <font color="#B22222">/* 1 dof on each face and element center */</font>
+<a name="line99"> 99: </a>    const <a href="../../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a> stencilWidth = 1;
+<a name="line100">100: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagCreate3d.html#DMStagCreate3d">DMStagCreate3d</a>(<a href="../../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,<a href="../../../../../../docs/manualpages/DM/DMBoundaryType.html#DMBoundaryType">DM_BOUNDARY_NONE</a>,<a href="../../../../../../docs/manualpages/DM/DMBoundaryType.html#DMBoundaryType">DM_BOUNDARY_NONE</a>,<a href="../../../../../../docs/manualpages/DM/DMBoundaryType.html#DMBoundaryType">DM_BOUNDARY_NONE</a>,4,5,6,<a href="../../../../../../docs/manualpages/Sys/PETSC_DECIDE.html#PETSC_DECIDE">PETSC_DECIDE</a>,<a href="../../../../../../docs/manualpages/Sys/PETSC_DECIDE.html#PETSC_DECIDE">PETSC_DECIDE</a>,<a href="../../../../../../docs/manualpages/Sys/PETSC_DECIDE.html#PETSC_DECIDE">PETSC_DECIDE</a>,dof0,dof1,dof2,dof3,<a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencilType.html#DMStagStencilType">DMSTAG_STENCIL_BOX</a>,stencilWidth,NULL,NULL,NULL,&amp;dmSol);
+<a name="line101">101: </a>    <a href="../../../../../../docs/manualpages/DM/DMSetFromOptions.html#DMSetFromOptions">DMSetFromOptions</a>(dmSol);
+<a name="line102">102: </a>    <a href="../../../../../../docs/manualpages/DM/DMSetUp.html#DMSetUp">DMSetUp</a>(dmSol);
+<a name="line103">103: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagSetUniformCoordinatesExplicit.html#DMStagSetUniformCoordinatesExplicit">DMStagSetUniformCoordinatesExplicit</a>(dmSol,0.0,1.0,0.0,1.0,0.0,1.0);
+<a name="line104">104: </a>    <font color="#B22222">/* Note: also see ex2.c, where another, more efficient option is demonstrated,</font>
+<a name="line105">105: </a><font color="#B22222">       using <a href="../../../../../../docs/manualpages/DMSTAG/DMStagSetUniformCoordinatesProduct.html#DMStagSetUniformCoordinatesProduct">DMStagSetUniformCoordinatesProduct</a>() */</font>
+<a name="line106">106: </a>  }
+
+<a name="line108">108: </a>  <font color="#B22222">/* Compute (manufactured) reference solution */</font>
+<a name="line109">109: </a>  CreateReferenceSolution(dmSol,&amp;solRef);
+
+<a name="line111">111: </a>  <font color="#B22222">/* Assemble system */</font>
+<a name="line112">112: </a>  CreateSystem(dmSol,&amp;A,&amp;rhs,pinPressure);
+
+<a name="line114">114: </a>  <font color="#B22222">/* Attach a constant-pressure nullspace to the operator */</font>
+<a name="line115">115: </a>  <font color="#4169E1">if</font> (!pinPressure) {
+<a name="line116">116: </a>    AttachNullspace(dmSol,A);
+<a name="line117">117: </a>  }
+
+<a name="line119">119: </a>  <font color="#B22222">/* Solve */</font>
+<a name="line120">120: </a>  <a href="../../../../../../docs/manualpages/DM/DMCreateGlobalVector.html#DMCreateGlobalVector">DMCreateGlobalVector</a>(dmSol,&amp;sol);
+<a name="line121">121: </a>  <a href="../../../../../../docs/manualpages/KSP/KSPCreate.html#KSPCreate">KSPCreate</a>(<a href="../../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,&amp;ksp);
+<a name="line122">122: </a>  <a href="../../../../../../docs/manualpages/KSP/KSPSetType.html#KSPSetType">KSPSetType</a>(ksp,<a href="../../../../../../docs/manualpages/KSP/KSPFGMRES.html#KSPFGMRES">KSPFGMRES</a>);
+<a name="line123">123: </a>  <a href="../../../../../../docs/manualpages/KSP/KSPSetOperators.html#KSPSetOperators">KSPSetOperators</a>(ksp,A,A);
+<a name="line124">124: </a>  <a href="../../../../../../docs/manualpages/KSP/KSPGetPC.html#KSPGetPC">KSPGetPC</a>(ksp,&amp;pc);
+<a name="line125">125: </a>  <a href="../../../../../../docs/manualpages/PC/PCSetType.html#PCSetType">PCSetType</a>(pc,<a href="../../../../../../docs/manualpages/PC/PCFIELDSPLIT.html#PCFIELDSPLIT">PCFIELDSPLIT</a>);
+<a name="line126">126: </a>  <a href="../../../../../../docs/manualpages/PC/PCFieldSplitSetDetectSaddlePoint.html#PCFieldSplitSetDetectSaddlePoint">PCFieldSplitSetDetectSaddlePoint</a>(pc,<a href="../../../../../../docs/manualpages/Sys/PETSC_TRUE.html#PETSC_TRUE">PETSC_TRUE</a>);
+<a name="line127">127: </a>  <a href="../../../../../../docs/manualpages/KSP/KSPSetFromOptions.html#KSPSetFromOptions">KSPSetFromOptions</a>(ksp);
+<a name="line128">128: </a>  <a href="../../../../../../docs/manualpages/KSP/KSPSolve.html#KSPSolve">KSPSolve</a>(ksp,rhs,sol);
+
+<a name="line130">130: </a>  <font color="#B22222">/* Check Solution */</font>
+<a name="line131">131: </a>  CheckSolution(sol,solRef);
+
+<a name="line133">133: </a>  <font color="#B22222">/* Clean up and finalize PETSc */</font>
+<a name="line134">134: </a>  <a href="../../../../../../docs/manualpages/KSP/KSPDestroy.html#KSPDestroy">KSPDestroy</a>(&amp;ksp);
+<a name="line135">135: </a>  <a href="../../../../../../docs/manualpages/Vec/VecDestroy.html#VecDestroy">VecDestroy</a>(&amp;sol);
+<a name="line136">136: </a>  <a href="../../../../../../docs/manualpages/Vec/VecDestroy.html#VecDestroy">VecDestroy</a>(&amp;solRef);
+<a name="line137">137: </a>  <a href="../../../../../../docs/manualpages/Vec/VecDestroy.html#VecDestroy">VecDestroy</a>(&amp;rhs);
+<a name="line138">138: </a>  <a href="../../../../../../docs/manualpages/Mat/MatDestroy.html#MatDestroy">MatDestroy</a>(&amp;A);
+<a name="line139">139: </a>  <a href="../../../../../../docs/manualpages/DM/DMDestroy.html#DMDestroy">DMDestroy</a>(&amp;dmSol);
+<a name="line140">140: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscFinalize.html#PetscFinalize">PetscFinalize</a>();
+<a name="line141">141: </a>  <font color="#4169E1">return</font> ierr;
+<a name="line142">142: </a>}
+
+<a name="line144">144: </a><strong><font color="#4169E1"><a name="CreateSystem"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a> CreateSystem(<a href="../../../../../../docs/manualpages/DM/DM.html#DM">DM</a> dmSol,<a href="../../../../../../docs/manualpages/Mat/Mat.html#Mat">Mat</a> *pA,<a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a> *pRhs, <a href="../../../../../../docs/manualpages/Sys/PetscBool.html#PetscBool">PetscBool</a> pinPressure)</font></strong>
+<a name="line145">145: </a>{
+<a name="line146">146: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a>    ierr;
+<a name="line147">147: </a>  <a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a>               rhs,coordLocal;
+<a name="line148">148: </a>  <a href="../../../../../../docs/manualpages/Mat/Mat.html#Mat">Mat</a>               A;
+<a name="line149">149: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>          startx,starty,startz,N[3],nx,ny,nz,ex,ey,ez,d;
+<a name="line150">150: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>          icp[3],icux[3],icuy[3],icuz[3],icux_right[3],icuy_up[3],icuz_front[3];
+<a name="line151">151: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscBool.html#PetscBool">PetscBool</a>         isLastRankx,isLastRanky,isLastRankz,isFirstRankx,isFirstRanky,isFirstRankz;
+<a name="line152">152: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscReal.html#PetscReal">PetscReal</a>         hx,hy,hz;
+<a name="line153">153: </a>  <a href="../../../../../../docs/manualpages/DM/DM.html#DM">DM</a>                dmCoord;
+<a name="line154">154: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>       ****arrCoord;
+
+<a name="line157">157: </a>  <a href="../../../../../../docs/manualpages/DM/DMCreateMatrix.html#DMCreateMatrix">DMCreateMatrix</a>(dmSol,pA);
+<a name="line158">158: </a>  A = *pA;
+<a name="line159">159: </a>  <a href="../../../../../../docs/manualpages/DM/DMCreateGlobalVector.html#DMCreateGlobalVector">DMCreateGlobalVector</a>(dmSol,pRhs);
+<a name="line160">160: </a>  rhs = *pRhs;
+
+<a name="line162">162: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetCorners.html#DMStagGetCorners">DMStagGetCorners</a>(dmSol,&amp;startx,&amp;starty,&amp;startz,&amp;nx,&amp;ny,&amp;nz,NULL,NULL,NULL);
+<a name="line163">163: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetGlobalSizes.html#DMStagGetGlobalSizes">DMStagGetGlobalSizes</a>(dmSol,&amp;N[0],&amp;N[1],&amp;N[2]);
+<a name="line164">164: </a>  <font color="#4169E1">if</font> (N[0] &lt; 2 || N[1] &lt; 2 || N[2] &lt; 2) <a href="../../../../../../docs/manualpages/Sys/SETERRQ.html#SETERRQ">SETERRQ</a>(<a href="../../../../../../docs/manualpages/Sys/PetscObjectComm.html#PetscObjectComm">PetscObjectComm</a>((<a href="../../../../../../docs/manualpages/Sys/PetscObject.html#PetscObject">PetscObject</a>)dmSol),PETSC_ERR_ARG_SIZ,<font color="#666666">"This example requires at least two elements in each dimensions"</font>);
+<a name="line165">165: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetIsLastRank.html#DMStagGetIsLastRank">DMStagGetIsLastRank</a>(dmSol,&amp;isLastRankx,&amp;isLastRanky,&amp;isLastRankz);
+<a name="line166">166: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetIsFirstRank.html#DMStagGetIsFirstRank">DMStagGetIsFirstRank</a>(dmSol,&amp;isFirstRankx,&amp;isFirstRanky,&amp;isFirstRankz);
+<a name="line167">167: </a>  hx = 1.0/N[0]; hy = 1.0/N[1]; hz = 1.0/N[2];
+<a name="line168">168: </a>  <a href="../../../../../../docs/manualpages/DM/DMGetCoordinateDM.html#DMGetCoordinateDM">DMGetCoordinateDM</a>(dmSol,&amp;dmCoord);
+<a name="line169">169: </a>  <a href="../../../../../../docs/manualpages/DM/DMGetCoordinatesLocal.html#DMGetCoordinatesLocal">DMGetCoordinatesLocal</a>(dmSol,&amp;coordLocal);
+<a name="line170">170: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecGetArrayDOFRead.html#DMStagVecGetArrayDOFRead">DMStagVecGetArrayDOFRead</a>(dmCoord,coordLocal,&amp;arrCoord);
+<a name="line171">171: </a>  <font color="#4169E1">for</font> (d=0; d&lt;3; ++d) {
+<a name="line172">172: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,ELEMENT,d,&amp;icp[d]       );
+<a name="line173">173: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,LEFT,   d,&amp;icux[d]      );
+<a name="line174">174: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,DOWN,   d,&amp;icuy[d]      );
+<a name="line175">175: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,BACK,   d,&amp;icuz[d]      );
+<a name="line176">176: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,RIGHT,  d,&amp;icux_right[d]);
+<a name="line177">177: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,UP,     d,&amp;icuy_up[d]   );
+<a name="line178">178: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,FRONT,  d,&amp;icuz_front[d]);
+<a name="line179">179: </a>  }
+
+<a name="line181">181: </a>  <font color="#B22222">/* Loop over all local elements. Note that it may be more efficient in real</font>
+<a name="line182">182: </a><font color="#B22222">     applications to loop over each boundary separately */</font>
+<a name="line183">183: </a>  <font color="#4169E1">for</font> (ez = startz; ez&lt;startz+nz; ++ez) { <font color="#B22222">/* With DMStag, always iterate x fastest, y second fastest, z slowest */</font>
+<a name="line184">184: </a>    <font color="#4169E1">for</font> (ey = starty; ey&lt;starty+ny; ++ey) {
+<a name="line185">185: </a>      <font color="#4169E1">for</font> (ex = startx; ex&lt;startx+nx; ++ex) {
+
+<a name="line187">187: </a>        <font color="#4169E1">if</font> (ex == N[0]-1) {
+<a name="line188">188: </a>          <font color="#B22222">/* Right Boundary velocity Dirichlet */</font>
+<a name="line189">189: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row;
+<a name="line190">190: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>   valRhs;
+<a name="line191">191: </a>          const <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> valA = 1.0;
+<a name="line192">192: </a>          row.i = ex; row.j = ey; row.k = ez; row.loc = RIGHT; row.c = 0;
+<a name="line193">193: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,1,&amp;row,&amp;valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line194">194: </a>          valRhs = uxRef(
+<a name="line195">195: </a>              arrCoord[ez][ey][ex][icux_right[0]],
+<a name="line196">196: </a>              arrCoord[ez][ey][ex][icux_right[1]],
+<a name="line197">197: </a>              arrCoord[ez][ey][ex][icux_right[2]]
+<a name="line198">198: </a>              );
+<a name="line199">199: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line200">200: </a>        }
+<a name="line201">201: </a>        <font color="#4169E1">if</font> (ey == N[1]-1) {
+<a name="line202">202: </a>          <font color="#B22222">/* Top boundary velocity Dirichlet */</font>
+<a name="line203">203: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row;
+<a name="line204">204: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>   valRhs;
+<a name="line205">205: </a>          const <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> valA = 1.0;
+<a name="line206">206: </a>          row.i = ex; row.j = ey; row.k = ez; row.loc = UP; row.c = 0;
+<a name="line207">207: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,1,&amp;row,&amp;valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line208">208: </a>          valRhs = uyRef(
+<a name="line209">209: </a>              arrCoord[ez][ey][ex][icuy_up[0]],
+<a name="line210">210: </a>              arrCoord[ez][ey][ex][icuy_up[1]],
+<a name="line211">211: </a>              arrCoord[ez][ey][ex][icuy_up[2]]
+<a name="line212">212: </a>              );
+<a name="line213">213: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line214">214: </a>        }
+<a name="line215">215: </a>        <font color="#4169E1">if</font> (ez == N[2]-1) {
+<a name="line216">216: </a>          <font color="#B22222">/* Top boundary velocity Dirichlet */</font>
+<a name="line217">217: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row;
+<a name="line218">218: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>   valRhs;
+<a name="line219">219: </a>          const <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> valA = 1.0;
+<a name="line220">220: </a>          row.i = ex; row.j = ey; row.k = ez; row.loc = FRONT; row.c = 0;
+<a name="line221">221: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,1,&amp;row,&amp;valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line222">222: </a>          valRhs = uzRef(
+<a name="line223">223: </a>              arrCoord[ez][ey][ex][icuz_front[0]],
+<a name="line224">224: </a>              arrCoord[ez][ey][ex][icuz_front[1]],
+<a name="line225">225: </a>              arrCoord[ez][ey][ex][icuz_front[2]]
+<a name="line226">226: </a>              );
+<a name="line227">227: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line228">228: </a>        }
+
+<a name="line230">230: </a>        <font color="#B22222">/* Equation on left face of this element */</font>
+<a name="line231">231: </a>        <font color="#4169E1">if</font> (ex == 0) {
+<a name="line232">232: </a>          <font color="#B22222">/* Left velocity Dirichlet */</font>
+<a name="line233">233: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row;
+<a name="line234">234: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>   valRhs;
+<a name="line235">235: </a>          const <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> valA = 1.0;
+<a name="line236">236: </a>          row.i = ex; row.j = ey; row.k = ez; row.loc = LEFT; row.c = 0;
+<a name="line237">237: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,1,&amp;row,&amp;valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line238">238: </a>          valRhs = uxRef(
+<a name="line239">239: </a>              arrCoord[ez][ey][ex][icux[0]],
+<a name="line240">240: </a>              arrCoord[ez][ey][ex][icux[1]],
+<a name="line241">241: </a>              arrCoord[ez][ey][ex][icux[2]]
+<a name="line242">242: </a>              );
+<a name="line243">243: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line244">244: </a>        } <font color="#4169E1">else</font> {
+<a name="line245">245: </a>          <font color="#B22222">/* X-momentum interior equation : (u_xx + u_yy + u_zz) - p_x = f^x */</font>
+<a name="line246">246: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row,col[9];
+<a name="line247">247: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>   valA[9],valRhs;
+<a name="line248">248: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>      nEntries;
+
+<a name="line250">250: </a>          row.i = ex; row.j = ey; row.k = ez; row.loc = LEFT; row.c = 0;
+<a name="line251">251: </a>          <font color="#4169E1">if</font> (ey == 0) {
+<a name="line252">252: </a>            <font color="#4169E1">if</font> (ez == 0) {
+<a name="line253">253: </a>              nEntries = 7;
+<a name="line254">254: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = LEFT;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -1.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line255">255: </a>              <font color="#B22222">/* Missing down term */</font>
+<a name="line256">256: </a>              col[1].i = ex  ; col[1].j = ey+1;  col[1].k = ez  ; col[1].loc = LEFT;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line257">257: </a>              col[2].i = ex-1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = LEFT;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line258">258: </a>              col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = LEFT;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line259">259: </a>              <font color="#B22222">/* Missing back term */</font>
+<a name="line260">260: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez+1; col[4].loc = LEFT;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line261">261: </a>              col[5].i = ex-1; col[5].j = ey  ;  col[5].k = ez  ; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hx;
+<a name="line262">262: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hx;
+<a name="line263">263: </a>            } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ez == N[2]-1) {
+<a name="line264">264: </a>              nEntries = 7;
+<a name="line265">265: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = LEFT;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -1.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line266">266: </a>              <font color="#B22222">/* Missing down term */</font>
+<a name="line267">267: </a>              col[1].i = ex  ; col[1].j = ey+1;  col[1].k = ez  ; col[1].loc = LEFT;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line268">268: </a>              col[2].i = ex-1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = LEFT;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line269">269: </a>              col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = LEFT;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line270">270: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = LEFT;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line271">271: </a>              <font color="#B22222">/* Missing front term */</font>
+<a name="line272">272: </a>              col[5].i = ex-1; col[5].j = ey  ;  col[5].k = ez  ; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hx;
+<a name="line273">273: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hx;
+<a name="line274">274: </a>            } <font color="#4169E1">else</font> {
+<a name="line275">275: </a>              nEntries = 8;
+<a name="line276">276: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = LEFT;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -1.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line277">277: </a>              <font color="#B22222">/* Missing down term */</font>
+<a name="line278">278: </a>              col[1].i = ex  ; col[1].j = ey+1;  col[1].k = ez  ; col[1].loc = LEFT;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line279">279: </a>              col[2].i = ex-1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = LEFT;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line280">280: </a>              col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = LEFT;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line281">281: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = LEFT;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line282">282: </a>              col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez+1; col[5].loc = LEFT;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line283">283: </a>              col[6].i = ex-1; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hx;
+<a name="line284">284: </a>              col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hx;
+<a name="line285">285: </a>            }
+<a name="line286">286: </a>          } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ey == N[1]-1) {
+<a name="line287">287: </a>            <font color="#4169E1">if</font> (ez == 0) {
+<a name="line288">288: </a>              nEntries = 7;
+<a name="line289">289: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = LEFT;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -2.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line290">290: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = LEFT;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line291">291: </a>              <font color="#B22222">/* Missing up term */</font>
+<a name="line292">292: </a>              col[2].i = ex-1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = LEFT;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line293">293: </a>              col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = LEFT;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line294">294: </a>              <font color="#B22222">/* Missing back entry */</font>
+<a name="line295">295: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez+1; col[4].loc = LEFT;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line296">296: </a>              col[5].i = ex-1; col[5].j = ey  ;  col[5].k = ez  ; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hx;
+<a name="line297">297: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hx;
+<a name="line298">298: </a>            } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ez == N[2]-1) {
+<a name="line299">299: </a>              nEntries = 7;
+<a name="line300">300: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = LEFT;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -2.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line301">301: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = LEFT;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line302">302: </a>              <font color="#B22222">/* Missing up term */</font>
+<a name="line303">303: </a>              col[2].i = ex-1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = LEFT;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line304">304: </a>              col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = LEFT;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line305">305: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = LEFT;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line306">306: </a>              <font color="#B22222">/* Missing front term */</font>
+<a name="line307">307: </a>              col[5].i = ex-1; col[5].j = ey  ;  col[5].k = ez  ; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hx;
+<a name="line308">308: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hx;
+<a name="line309">309: </a>            } <font color="#4169E1">else</font> {
+<a name="line310">310: </a>              nEntries = 8;
+<a name="line311">311: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = LEFT;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -2.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line312">312: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = LEFT;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line313">313: </a>              <font color="#B22222">/* Missing up term */</font>
+<a name="line314">314: </a>              col[2].i = ex-1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = LEFT;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line315">315: </a>              col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = LEFT;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line316">316: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = LEFT;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line317">317: </a>              col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez+1; col[5].loc = LEFT;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line318">318: </a>              col[6].i = ex-1; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hx;
+<a name="line319">319: </a>              col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hx;
+<a name="line320">320: </a>            }
+<a name="line321">321: </a>          } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ez == 0) {
+<a name="line322">322: </a>            nEntries = 8;
+<a name="line323">323: </a>            col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = LEFT;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -2.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line324">324: </a>            col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = LEFT;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line325">325: </a>            col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = LEFT;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line326">326: </a>            col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = LEFT;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line327">327: </a>            col[4].i = ex+1; col[4].j = ey  ;  col[4].k = ez  ; col[4].loc = LEFT;    col[4].c  = 0; valA[4] =  1.0 / (hx*hx);
+<a name="line328">328: </a>            <font color="#B22222">/* Missing back term */</font>
+<a name="line329">329: </a>            col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez+1; col[5].loc = LEFT;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line330">330: </a>            col[6].i = ex-1; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hx;
+<a name="line331">331: </a>            col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hx;
+<a name="line332">332: </a>          } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ez == N[2]-1) {
+<a name="line333">333: </a>            nEntries = 8;
+<a name="line334">334: </a>            col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = LEFT;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -2.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line335">335: </a>            col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = LEFT;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line336">336: </a>            col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = LEFT;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line337">337: </a>            col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = LEFT;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line338">338: </a>            col[4].i = ex+1; col[4].j = ey  ;  col[4].k = ez  ; col[4].loc = LEFT;    col[4].c  = 0; valA[4] =  1.0 / (hx*hx);
+<a name="line339">339: </a>            col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez-1; col[5].loc = LEFT;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line340">340: </a>            <font color="#B22222">/* Missing front term */</font>
+<a name="line341">341: </a>            col[6].i = ex-1; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hx;
+<a name="line342">342: </a>            col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hx;
+<a name="line343">343: </a>          } <font color="#4169E1">else</font> {
+<a name="line344">344: </a>            nEntries = 9;
+<a name="line345">345: </a>            col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = LEFT;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -2.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line346">346: </a>            col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = LEFT;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line347">347: </a>            col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = LEFT;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line348">348: </a>            col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = LEFT;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line349">349: </a>            col[4].i = ex+1; col[4].j = ey  ;  col[4].k = ez  ; col[4].loc = LEFT;    col[4].c  = 0; valA[4] =  1.0 / (hx*hx);
+<a name="line350">350: </a>            col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez-1; col[5].loc = LEFT;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line351">351: </a>            col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez+1; col[6].loc = LEFT;    col[6].c  = 0; valA[6] =  1.0 / (hz*hz);
+<a name="line352">352: </a>            col[7].i = ex-1; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] =  1.0 / hx;
+<a name="line353">353: </a>            col[8].i = ex  ; col[8].j = ey  ;  col[8].k = ez  ; col[8].loc = ELEMENT; col[8].c  = 0; valA[8] = -1.0 / hx;
+<a name="line354">354: </a>          }
+<a name="line355">355: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,nEntries,col,valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line356">356: </a>          valRhs = fx(
+<a name="line357">357: </a>              arrCoord[ez][ey][ex][icux[0]],
+<a name="line358">358: </a>              arrCoord[ez][ey][ex][icux[1]],
+<a name="line359">359: </a>              arrCoord[ez][ey][ex][icux[2]]
+<a name="line360">360: </a>              );
+<a name="line361">361: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line362">362: </a>        }
+
+<a name="line364">364: </a>        <font color="#B22222">/* Equation on bottom face of this element */</font>
+<a name="line365">365: </a>        <font color="#4169E1">if</font> (ey == 0) {
+<a name="line366">366: </a>          <font color="#B22222">/* Bottom boundary velocity Dirichlet */</font>
+<a name="line367">367: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row;
+<a name="line368">368: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>   valRhs;
+<a name="line369">369: </a>          const <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> valA = 1.0;
+<a name="line370">370: </a>          row.i = ex; row.j = ey; row.k = ez; row.loc = DOWN; row.c = 0;
+<a name="line371">371: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,1,&amp;row,&amp;valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line372">372: </a>          valRhs = uyRef(
+<a name="line373">373: </a>              arrCoord[ez][ey][ex][icuy[0]],
+<a name="line374">374: </a>              arrCoord[ez][ey][ex][icuy[1]],
+<a name="line375">375: </a>              arrCoord[ez][ey][ex][icuy[2]]
+<a name="line376">376: </a>              );
+<a name="line377">377: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line378">378: </a>        } <font color="#4169E1">else</font> {
+<a name="line379">379: </a>          <font color="#B22222">/* Y-momentum equation, (v_xx + v_yy + v_zz) - p_y = f^y */</font>
+<a name="line380">380: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row,col[9];
+<a name="line381">381: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>   valA[9],valRhs;
+<a name="line382">382: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>      nEntries;
+
+<a name="line384">384: </a>          row.i = ex; row.j = ey; row.k = ez; row.loc = DOWN; row.c = 0;
+<a name="line385">385: </a>          <font color="#4169E1">if</font> (ex ==0) {
+<a name="line386">386: </a>            <font color="#4169E1">if</font> (ez == 0) {
+<a name="line387">387: </a>              nEntries = 7;
+<a name="line388">388: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = DOWN;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -2.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line389">389: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = DOWN;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line390">390: </a>              col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = DOWN;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line391">391: </a>              <font color="#B22222">/* Left term missing */</font>
+<a name="line392">392: </a>              col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = DOWN;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line393">393: </a>              <font color="#B22222">/* Back term missing */</font>
+<a name="line394">394: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez+1; col[4].loc = DOWN;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line395">395: </a>              col[5].i = ex  ; col[5].j = ey-1;  col[5].k = ez  ; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hy;
+<a name="line396">396: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hy;
+<a name="line397">397: </a>            } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ez == N[2]-1) {
+<a name="line398">398: </a>              nEntries = 7;
+<a name="line399">399: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = DOWN;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -2.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line400">400: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = DOWN;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line401">401: </a>              col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = DOWN;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line402">402: </a>              <font color="#B22222">/* Left term missing */</font>
+<a name="line403">403: </a>              col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = DOWN;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line404">404: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = DOWN;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line405">405: </a>              <font color="#B22222">/* Front term missing */</font>
+<a name="line406">406: </a>              col[5].i = ex  ; col[4].j = ey-1;  col[5].k = ez  ; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hy;
+<a name="line407">407: </a>              col[6].i = ex  ; col[5].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hy;
+<a name="line408">408: </a>            } <font color="#4169E1">else</font> {
+<a name="line409">409: </a>              nEntries = 8;
+<a name="line410">410: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = DOWN;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -2.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line411">411: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = DOWN;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line412">412: </a>              col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = DOWN;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line413">413: </a>              <font color="#B22222">/* Left term missing */</font>
+<a name="line414">414: </a>              col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = DOWN;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line415">415: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = DOWN;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line416">416: </a>              col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez+1; col[5].loc = DOWN;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line417">417: </a>              col[6].i = ex  ; col[6].j = ey-1;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hy;
+<a name="line418">418: </a>              col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hy;
+<a name="line419">419: </a>            }
+<a name="line420">420: </a>          } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ex == N[0]-1) {
+<a name="line421">421: </a>            <font color="#4169E1">if</font> (ez == 0) {
+<a name="line422">422: </a>              nEntries = 7;
+<a name="line423">423: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = DOWN;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -2.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line424">424: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = DOWN;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line425">425: </a>              col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = DOWN;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line426">426: </a>              col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = DOWN;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line427">427: </a>              <font color="#B22222">/* Right term missing */</font>
+<a name="line428">428: </a>              <font color="#B22222">/* Back term missing */</font>
+<a name="line429">429: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez+1; col[4].loc = DOWN;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line430">430: </a>              col[5].i = ex  ; col[5].j = ey-1;  col[5].k = ez  ; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hy;
+<a name="line431">431: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hy;
+<a name="line432">432: </a>            } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ez == N[2]-1) {
+<a name="line433">433: </a>              nEntries = 7;
+<a name="line434">434: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = DOWN;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -2.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line435">435: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = DOWN;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line436">436: </a>              col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = DOWN;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line437">437: </a>              col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = DOWN;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line438">438: </a>              <font color="#B22222">/* Right term missing */</font>
+<a name="line439">439: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = DOWN;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line440">440: </a>              <font color="#B22222">/* Front term missing */</font>
+<a name="line441">441: </a>              col[5].i = ex  ; col[5].j = ey-1;  col[5].k = ez  ; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hy;
+<a name="line442">442: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hy;
+<a name="line443">443: </a>            } <font color="#4169E1">else</font> {
+<a name="line444">444: </a>              nEntries = 8;
+<a name="line445">445: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = DOWN;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -2.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line446">446: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = DOWN;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line447">447: </a>              col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = DOWN;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line448">448: </a>              col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = DOWN;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line449">449: </a>              <font color="#B22222">/* Right term missing */</font>
+<a name="line450">450: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = DOWN;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line451">451: </a>              col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez+1; col[5].loc = DOWN;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line452">452: </a>              col[6].i = ex  ; col[6].j = ey-1;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hy;
+<a name="line453">453: </a>              col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hy;
+<a name="line454">454: </a>            }
+<a name="line455">455: </a>          } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ez == 0) {
+<a name="line456">456: </a>            nEntries = 8;
+<a name="line457">457: </a>            col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = DOWN;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -2.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line458">458: </a>            col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = DOWN;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line459">459: </a>            col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = DOWN;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line460">460: </a>            col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = DOWN;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line461">461: </a>            col[4].i = ex+1; col[4].j = ey  ;  col[4].k = ez  ; col[4].loc = DOWN;    col[4].c  = 0; valA[4] =  1.0 / (hx*hx);
+<a name="line462">462: </a>            <font color="#B22222">/* Back term missing */</font>
+<a name="line463">463: </a>            col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez+1; col[5].loc = DOWN;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line464">464: </a>            col[6].i = ex  ; col[6].j = ey-1;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hy;
+<a name="line465">465: </a>            col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hy;
+<a name="line466">466: </a>          } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ez == N[2]-1) {
+<a name="line467">467: </a>            nEntries = 8;
+<a name="line468">468: </a>            col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = DOWN;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -2.0 / (hy*hy) -1.0 / (hz*hz);
+<a name="line469">469: </a>            col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = DOWN;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line470">470: </a>            col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = DOWN;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line471">471: </a>            col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = DOWN;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line472">472: </a>            col[4].i = ex+1; col[4].j = ey  ;  col[4].k = ez  ; col[4].loc = DOWN;    col[4].c  = 0; valA[4] =  1.0 / (hx*hx);
+<a name="line473">473: </a>            col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez-1; col[5].loc = DOWN;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line474">474: </a>            <font color="#B22222">/* Front term missing */</font>
+<a name="line475">475: </a>            col[6].i = ex  ; col[6].j = ey-1;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hy;
+<a name="line476">476: </a>            col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hy;
+<a name="line477">477: </a>          } <font color="#4169E1">else</font> {
+<a name="line478">478: </a>            nEntries = 9;
+<a name="line479">479: </a>            col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = DOWN;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -2.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line480">480: </a>            col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = DOWN;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line481">481: </a>            col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = DOWN;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line482">482: </a>            col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = DOWN;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line483">483: </a>            col[4].i = ex+1; col[4].j = ey  ;  col[4].k = ez  ; col[4].loc = DOWN;    col[4].c  = 0; valA[4] =  1.0 / (hx*hx);
+<a name="line484">484: </a>            col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez-1; col[5].loc = DOWN;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line485">485: </a>            col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez+1; col[6].loc = DOWN;    col[6].c  = 0; valA[6] =  1.0 / (hz*hz);
+<a name="line486">486: </a>            col[7].i = ex  ; col[7].j = ey-1;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] =  1.0 / hy;
+<a name="line487">487: </a>            col[8].i = ex  ; col[8].j = ey  ;  col[8].k = ez  ; col[8].loc = ELEMENT; col[8].c  = 0; valA[8] = -1.0 / hy;
+<a name="line488">488: </a>          }
+<a name="line489">489: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,nEntries,col,valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line490">490: </a>          valRhs = fy(
+<a name="line491">491: </a>              arrCoord[ez][ey][ex][icuy[0]],
+<a name="line492">492: </a>              arrCoord[ez][ey][ex][icuy[1]],
+<a name="line493">493: </a>              arrCoord[ez][ey][ex][icuy[2]]
+<a name="line494">494: </a>              );
+<a name="line495">495: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line496">496: </a>        }
+
+<a name="line498">498: </a>        <font color="#B22222">/* Equation on back face of this element */</font>
+<a name="line499">499: </a>        <font color="#4169E1">if</font> (ez == 0) {
+<a name="line500">500: </a>          <font color="#B22222">/* Back boundary velocity Dirichlet */</font>
+<a name="line501">501: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row;
+<a name="line502">502: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>   valRhs;
+<a name="line503">503: </a>          const <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> valA = 1.0;
+<a name="line504">504: </a>          row.i = ex; row.j = ey; row.k = ez; row.loc = BACK; row.c = 0;
+<a name="line505">505: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,1,&amp;row,&amp;valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line506">506: </a>          valRhs = uzRef(
+<a name="line507">507: </a>              arrCoord[ez][ey][ex][icuz[0]],
+<a name="line508">508: </a>              arrCoord[ez][ey][ex][icuz[1]],
+<a name="line509">509: </a>              arrCoord[ez][ey][ex][icuz[2]]
+<a name="line510">510: </a>              );
+<a name="line511">511: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line512">512: </a>        } <font color="#4169E1">else</font> {
+<a name="line513">513: </a>          <font color="#B22222">/* Z-momentum equation, (w_xx + w_yy + w_zz) - p_z = f^z */</font>
+<a name="line514">514: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row,col[9];
+<a name="line515">515: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>   valA[9],valRhs;
+<a name="line516">516: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>      nEntries;
+
+<a name="line518">518: </a>          row.i = ex; row.j = ey; row.k = ez; row.loc = BACK; row.c = 0;
+<a name="line519">519: </a>          <font color="#4169E1">if</font> (ex == 0) {
+<a name="line520">520: </a>            <font color="#4169E1">if</font> (ey == 0) {
+<a name="line521">521: </a>              nEntries = 7;
+<a name="line522">522: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = BACK;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -1.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line523">523: </a>              <font color="#B22222">/* Down term missing */</font>
+<a name="line524">524: </a>              col[1].i = ex  ; col[1].j = ey+1;  col[1].k = ez  ; col[1].loc = BACK;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line525">525: </a>              <font color="#B22222">/* Left term missing */</font>
+<a name="line526">526: </a>              col[2].i = ex+1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = BACK;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line527">527: </a>              col[3].i = ex  ; col[3].j = ey  ;  col[3].k = ez-1; col[3].loc = BACK;    col[3].c  = 0; valA[3] =  1.0 / (hz*hz);
+<a name="line528">528: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez+1; col[4].loc = BACK;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line529">529: </a>              col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez-1; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hz;
+<a name="line530">530: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hz;
+<a name="line531">531: </a>            } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ey == N[1]-1) {
+<a name="line532">532: </a>              nEntries = 7;
+<a name="line533">533: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = BACK;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -1.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line534">534: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = BACK;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line535">535: </a>              <font color="#B22222">/* Up term missing */</font>
+<a name="line536">536: </a>              <font color="#B22222">/* Left term missing */</font>
+<a name="line537">537: </a>              col[2].i = ex+1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = BACK;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line538">538: </a>              col[3].i = ex  ; col[3].j = ey  ;  col[3].k = ez-1; col[3].loc = BACK;    col[3].c  = 0; valA[3] =  1.0 / (hz*hz);
+<a name="line539">539: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez+1; col[4].loc = BACK;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line540">540: </a>              col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez-1; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hz;
+<a name="line541">541: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hz;
+<a name="line542">542: </a>            } <font color="#4169E1">else</font> {
+<a name="line543">543: </a>              nEntries = 8;
+<a name="line544">544: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = BACK;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -2.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line545">545: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = BACK;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line546">546: </a>              col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = BACK;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line547">547: </a>              <font color="#B22222">/* Left term missing */</font>
+<a name="line548">548: </a>              col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = BACK;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line549">549: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = BACK;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line550">550: </a>              col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez+1; col[5].loc = BACK;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line551">551: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez-1; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hz;
+<a name="line552">552: </a>              col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hz;
+<a name="line553">553: </a>            }
+<a name="line554">554: </a>          } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ex == N[0]-1) {
+<a name="line555">555: </a>            <font color="#4169E1">if</font> (ey == 0) {
+<a name="line556">556: </a>              nEntries = 7;
+<a name="line557">557: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = BACK;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -1.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line558">558: </a>              <font color="#B22222">/* Down term missing */</font>
+<a name="line559">559: </a>              col[1].i = ex  ; col[1].j = ey+1;  col[1].k = ez  ; col[1].loc = BACK;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line560">560: </a>              col[2].i = ex-1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = BACK;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line561">561: </a>              <font color="#B22222">/* Right term missing */</font>
+<a name="line562">562: </a>              col[3].i = ex  ; col[3].j = ey  ;  col[3].k = ez-1; col[3].loc = BACK;    col[3].c  = 0; valA[3] =  1.0 / (hz*hz);
+<a name="line563">563: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez+1; col[4].loc = BACK;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line564">564: </a>              col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez-1; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hz;
+<a name="line565">565: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hz;
+<a name="line566">566: </a>            } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ey == N[1]-1) {
+<a name="line567">567: </a>              nEntries = 7;
+<a name="line568">568: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = BACK;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -1.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line569">569: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = BACK;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line570">570: </a>              <font color="#B22222">/* Up term missing */</font>
+<a name="line571">571: </a>              col[2].i = ex-1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = BACK;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line572">572: </a>              <font color="#B22222">/* Right term missing */</font>
+<a name="line573">573: </a>              col[3].i = ex  ; col[3].j = ey  ;  col[3].k = ez-1; col[3].loc = BACK;    col[3].c  = 0; valA[3] =  1.0 / (hz*hz);
+<a name="line574">574: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez+1; col[4].loc = BACK;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line575">575: </a>              col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez-1; col[5].loc = ELEMENT; col[5].c  = 0; valA[5] =  1.0 / hz;
+<a name="line576">576: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez  ; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] = -1.0 / hz;
+<a name="line577">577: </a>            } <font color="#4169E1">else</font> {
+<a name="line578">578: </a>              nEntries = 8;
+<a name="line579">579: </a>              col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = BACK;    col[0].c  = 0; valA[0] = -1.0 / (hx*hx) + -2.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line580">580: </a>              col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = BACK;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line581">581: </a>              col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = BACK;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line582">582: </a>              col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = BACK;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line583">583: </a>              <font color="#B22222">/* Right term missing */</font>
+<a name="line584">584: </a>              col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = BACK;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line585">585: </a>              col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez+1; col[5].loc = BACK;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line586">586: </a>              col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez-1; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hz;
+<a name="line587">587: </a>              col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hz;
+<a name="line588">588: </a>            }
+<a name="line589">589: </a>          } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ey == 0) {
+<a name="line590">590: </a>            nEntries = 8;
+<a name="line591">591: </a>            col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = BACK;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -1.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line592">592: </a>            <font color="#B22222">/* Down term missing */</font>
+<a name="line593">593: </a>            col[1].i = ex  ; col[1].j = ey+1;  col[1].k = ez  ; col[1].loc = BACK;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line594">594: </a>            col[2].i = ex-1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = BACK;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line595">595: </a>            col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = BACK;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line596">596: </a>            col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = BACK;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line597">597: </a>            col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez+1; col[5].loc = BACK;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line598">598: </a>            col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez-1; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hz;
+<a name="line599">599: </a>            col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hz;
+<a name="line600">600: </a>          } <font color="#4169E1">else</font> <font color="#4169E1">if</font> (ey == N[1]-1) {
+<a name="line601">601: </a>            nEntries = 8;
+<a name="line602">602: </a>            col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = BACK;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -1.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line603">603: </a>            col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = BACK;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line604">604: </a>            <font color="#B22222">/* Up term missing */</font>
+<a name="line605">605: </a>            col[2].i = ex-1; col[2].j = ey  ;  col[2].k = ez  ; col[2].loc = BACK;    col[2].c  = 0; valA[2] =  1.0 / (hx*hx);
+<a name="line606">606: </a>            col[3].i = ex+1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = BACK;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line607">607: </a>            col[4].i = ex  ; col[4].j = ey  ;  col[4].k = ez-1; col[4].loc = BACK;    col[4].c  = 0; valA[4] =  1.0 / (hz*hz);
+<a name="line608">608: </a>            col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez+1; col[5].loc = BACK;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line609">609: </a>            col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez-1; col[6].loc = ELEMENT; col[6].c  = 0; valA[6] =  1.0 / hz;
+<a name="line610">610: </a>            col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez  ; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] = -1.0 / hz;
+<a name="line611">611: </a>          } <font color="#4169E1">else</font> {
+<a name="line612">612: </a>            nEntries = 9;
+<a name="line613">613: </a>            col[0].i = ex  ; col[0].j = ey  ;  col[0].k = ez  ; col[0].loc = BACK;    col[0].c  = 0; valA[0] = -2.0 / (hx*hx) + -2.0 / (hy*hy) -2.0 / (hz*hz);
+<a name="line614">614: </a>            col[1].i = ex  ; col[1].j = ey-1;  col[1].k = ez  ; col[1].loc = BACK;    col[1].c  = 0; valA[1] =  1.0 / (hy*hy);
+<a name="line615">615: </a>            col[2].i = ex  ; col[2].j = ey+1;  col[2].k = ez  ; col[2].loc = BACK;    col[2].c  = 0; valA[2] =  1.0 / (hy*hy);
+<a name="line616">616: </a>            col[3].i = ex-1; col[3].j = ey  ;  col[3].k = ez  ; col[3].loc = BACK;    col[3].c  = 0; valA[3] =  1.0 / (hx*hx);
+<a name="line617">617: </a>            col[4].i = ex+1; col[4].j = ey  ;  col[4].k = ez  ; col[4].loc = BACK;    col[4].c  = 0; valA[4] =  1.0 / (hx*hx);
+<a name="line618">618: </a>            col[5].i = ex  ; col[5].j = ey  ;  col[5].k = ez-1; col[5].loc = BACK;    col[5].c  = 0; valA[5] =  1.0 / (hz*hz);
+<a name="line619">619: </a>            col[6].i = ex  ; col[6].j = ey  ;  col[6].k = ez+1; col[6].loc = BACK;    col[6].c  = 0; valA[6] =  1.0 / (hz*hz);
+<a name="line620">620: </a>            col[7].i = ex  ; col[7].j = ey  ;  col[7].k = ez-1; col[7].loc = ELEMENT; col[7].c  = 0; valA[7] =  1.0 / hz;
+<a name="line621">621: </a>            col[8].i = ex  ; col[8].j = ey  ;  col[8].k = ez  ; col[8].loc = ELEMENT; col[8].c  = 0; valA[8] = -1.0 / hz;
+<a name="line622">622: </a>          }
+<a name="line623">623: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,nEntries,col,valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line624">624: </a>          valRhs = fz(
+<a name="line625">625: </a>              arrCoord[ez][ey][ex][icuz[0]],
+<a name="line626">626: </a>              arrCoord[ez][ey][ex][icuz[1]],
+<a name="line627">627: </a>              arrCoord[ez][ey][ex][icuz[2]]
+<a name="line628">628: </a>              );
+<a name="line629">629: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line630">630: </a>        }
+
+<a name="line632">632: </a>        <font color="#B22222">/* P equation : u_x + v_y + w_z = g</font>
+<a name="line633">633: </a><font color="#B22222">           Note that this includes an explicit zero on the diagonal. This is only needed for</font>
+<a name="line634">634: </a><font color="#B22222">           direct solvers (not required if using an iterative solver and setting the constant-pressure nullspace) */</font>
+<a name="line635">635: </a>        <font color="#4169E1">if</font> (pinPressure &amp;&amp; ex == 0 &amp;&amp; ey == 0 &amp;&amp; ez == 0) { <font color="#B22222">/* Pin the first pressure node, if requested */</font>
+<a name="line636">636: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row;
+<a name="line637">637: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a> valA,valRhs;
+<a name="line638">638: </a>          row.i = ex; row.j = ey; row.k = ez; row.loc  = ELEMENT; row.c = 0;
+<a name="line639">639: </a>          valA = 1.0;
+<a name="line640">640: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,1,&amp;row,&amp;valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line641">641: </a>          valRhs = pRef(
+<a name="line642">642: </a>              arrCoord[ez][ey][ex][icp[0]],
+<a name="line643">643: </a>              arrCoord[ez][ey][ex][icp[1]],
+<a name="line644">644: </a>              arrCoord[ez][ey][ex][icp[2]]
+<a name="line645">645: </a>              );
+<a name="line646">646: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line647">647: </a>        } <font color="#4169E1">else</font> {
+<a name="line648">648: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagStencil.html#DMStagStencil">DMStagStencil</a> row,col[7];
+<a name="line649">649: </a>          <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>   valA[7],valRhs;
+
+<a name="line651">651: </a>          row.i    = ex; row.j    = ey; row.k    = ez; row.loc    = ELEMENT; row.c    = 0;
+<a name="line652">652: </a>          col[0].i = ex; col[0].j = ey; col[0].k = ez; col[0].loc = LEFT;    col[0].c = 0; valA[0] = -1.0 / hx;
+<a name="line653">653: </a>          col[1].i = ex; col[1].j = ey; col[1].k = ez; col[1].loc = RIGHT;   col[1].c = 0; valA[1] =  1.0 / hx;
+<a name="line654">654: </a>          col[2].i = ex; col[2].j = ey; col[2].k = ez; col[2].loc = DOWN;    col[2].c = 0; valA[2] = -1.0 / hy;
+<a name="line655">655: </a>          col[3].i = ex; col[3].j = ey; col[3].k = ez; col[3].loc = UP;      col[3].c = 0; valA[3] =  1.0 / hy;
+<a name="line656">656: </a>          col[4].i = ex; col[4].j = ey; col[4].k = ez; col[4].loc = BACK;    col[4].c = 0; valA[4] = -1.0 / hz;
+<a name="line657">657: </a>          col[5].i = ex; col[5].j = ey; col[5].k = ez; col[5].loc = FRONT;   col[5].c = 0; valA[5] =  1.0 / hz;
+<a name="line658">658: </a>          col[6]   = row;                                                                  valA[6] =  0.0;
+<a name="line659">659: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMatSetValuesStencil.html#DMStagMatSetValuesStencil">DMStagMatSetValuesStencil</a>(dmSol,A,1,&amp;row,7,col,valA,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line660">660: </a>          valRhs = g(
+<a name="line661">661: </a>              arrCoord[ez][ey][ex][icp[0]],
+<a name="line662">662: </a>              arrCoord[ez][ey][ex][icp[1]],
+<a name="line663">663: </a>              arrCoord[ez][ey][ex][icp[2]]
+<a name="line664">664: </a>              );
+<a name="line665">665: </a>          <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecSetValuesStencil.html#DMStagVecSetValuesStencil">DMStagVecSetValuesStencil</a>(dmSol,rhs,1,&amp;row,&amp;valRhs,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>);
+<a name="line666">666: </a>        }
+<a name="line667">667: </a>      }
+<a name="line668">668: </a>    }
+<a name="line669">669: </a>  }
+<a name="line670">670: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecRestoreArrayDOFRead.html#DMStagVecRestoreArrayDOFRead">DMStagVecRestoreArrayDOFRead</a>(dmCoord,coordLocal,&amp;arrCoord);
+<a name="line671">671: </a>  <a href="../../../../../../docs/manualpages/Mat/MatAssemblyBegin.html#MatAssemblyBegin">MatAssemblyBegin</a>(A,<a href="../../../../../../docs/manualpages/Mat/MatAssemblyType.html#MatAssemblyType">MAT_FINAL_ASSEMBLY</a>);
+<a name="line672">672: </a>  <a href="../../../../../../docs/manualpages/Vec/VecAssemblyBegin.html#VecAssemblyBegin">VecAssemblyBegin</a>(rhs);
+<a name="line673">673: </a>  <a href="../../../../../../docs/manualpages/Mat/MatAssemblyEnd.html#MatAssemblyEnd">MatAssemblyEnd</a>(A,<a href="../../../../../../docs/manualpages/Mat/MatAssemblyType.html#MatAssemblyType">MAT_FINAL_ASSEMBLY</a>);
+<a name="line674">674: </a>  <a href="../../../../../../docs/manualpages/Vec/VecAssemblyEnd.html#VecAssemblyEnd">VecAssemblyEnd</a>(rhs);
+
+<a name="line676">676: </a>  <font color="#4169E1">return</font>(0);
+<a name="line677">677: </a>}
+
+<a name="line679">679: </a><font color="#B22222">/* Create a pressure-only DMStag and use it to generate a nullspace vector</font>
+<a name="line680">680: </a><font color="#B22222">   - Create a compatible DMStag with one dof per element (and nothing else).</font>
+<a name="line681">681: </a><font color="#B22222">   - Create a constant vector and normalize it</font>
+<a name="line682">682: </a><font color="#B22222">   - Migrate it to a vector on the original dmSol (making use of the fact</font>
+<a name="line683">683: </a><font color="#B22222">   that this will fill in zeros for "extra" dof)</font>
+<a name="line684">684: </a><font color="#B22222">   - Set the nullspace for the operator</font>
+<a name="line685">685: </a><font color="#B22222">   - Destroy everything (the operator keeps the references it needs) */</font>
+<a name="line686">686: </a><strong><font color="#4169E1"><a name="AttachNullspace"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a> AttachNullspace(<a href="../../../../../../docs/manualpages/DM/DM.html#DM">DM</a> dmSol,<a href="../../../../../../docs/manualpages/Mat/Mat.html#Mat">Mat</a> A)</font></strong>
+<a name="line687">687: </a>{
+<a name="line689">689: </a>  <a href="../../../../../../docs/manualpages/DM/DM.html#DM">DM</a>             dmPressure;
+<a name="line690">690: </a>  <a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a>            constantPressure,basis;
+<a name="line691">691: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscReal.html#PetscReal">PetscReal</a>      nrm;
+<a name="line692">692: </a>  <a href="../../../../../../docs/manualpages/Mat/MatNullSpace.html#MatNullSpace">MatNullSpace</a>   matNullSpace;
+
+<a name="line695">695: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagCreateCompatibleDMStag.html#DMStagCreateCompatibleDMStag">DMStagCreateCompatibleDMStag</a>(dmSol,0,0,0,1,&amp;dmPressure);
+<a name="line696">696: </a>  <a href="../../../../../../docs/manualpages/DM/DMGetGlobalVector.html#DMGetGlobalVector">DMGetGlobalVector</a>(dmPressure,&amp;constantPressure);
+<a name="line697">697: </a>  <a href="../../../../../../docs/manualpages/Vec/VecSet.html#VecSet">VecSet</a>(constantPressure,1.0);
+<a name="line698">698: </a>  <a href="../../../../../../docs/manualpages/Vec/VecNorm.html#VecNorm">VecNorm</a>(constantPressure,<a href="../../../../../../docs/manualpages/Vec/NORM_2.html#NORM_2">NORM_2</a>,&amp;nrm);
+<a name="line699">699: </a>  <a href="../../../../../../docs/manualpages/Vec/VecScale.html#VecScale">VecScale</a>(constantPressure,1.0/nrm);
+<a name="line700">700: </a>  <a href="../../../../../../docs/manualpages/DM/DMCreateGlobalVector.html#DMCreateGlobalVector">DMCreateGlobalVector</a>(dmSol,&amp;basis);
+<a name="line701">701: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagMigrateVec.html#DMStagMigrateVec">DMStagMigrateVec</a>(dmPressure,constantPressure,dmSol,basis);
+<a name="line702">702: </a>  <a href="../../../../../../docs/manualpages/Mat/MatNullSpaceCreate.html#MatNullSpaceCreate">MatNullSpaceCreate</a>(<a href="../../../../../../docs/manualpages/Sys/PetscObjectComm.html#PetscObjectComm">PetscObjectComm</a>((<a href="../../../../../../docs/manualpages/Sys/PetscObject.html#PetscObject">PetscObject</a>)dmSol),<a href="../../../../../../docs/manualpages/Sys/PETSC_FALSE.html#PETSC_FALSE">PETSC_FALSE</a>,1,&amp;basis,&amp;matNullSpace);
+<a name="line703">703: </a>  <a href="../../../../../../docs/manualpages/Vec/VecDestroy.html#VecDestroy">VecDestroy</a>(&amp;basis);
+<a name="line704">704: </a>  <a href="../../../../../../docs/manualpages/Vec/VecDestroy.html#VecDestroy">VecDestroy</a>(&amp;constantPressure);
+<a name="line705">705: </a>  <a href="../../../../../../docs/manualpages/Mat/MatSetNullSpace.html#MatSetNullSpace">MatSetNullSpace</a>(A,matNullSpace);
+<a name="line706">706: </a>  <a href="../../../../../../docs/manualpages/Mat/MatNullSpaceDestroy.html#MatNullSpaceDestroy">MatNullSpaceDestroy</a>(&amp;matNullSpace);
+<a name="line707">707: </a>  <font color="#4169E1">return</font>(0);
+<a name="line708">708: </a>}
+
+<a name="line710">710: </a><strong><font color="#4169E1"><a name="CreateReferenceSolution"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a> CreateReferenceSolution(<a href="../../../../../../docs/manualpages/DM/DM.html#DM">DM</a> dmSol,<a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a> *pSolRef)</font></strong>
+<a name="line711">711: </a>{
+<a name="line712">712: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a>    ierr;
+<a name="line713">713: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>          start[3],n[3],nExtra[3],ex,ey,ez,d;
+<a name="line714">714: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>          ip,iux,iuy,iuz,icp[3],icux[3],icuy[3],icuz[3];
+<a name="line715">715: </a>  <a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a>               solRef,solRefLocal,coord,coordLocal;
+<a name="line716">716: </a>  <a href="../../../../../../docs/manualpages/DM/DM.html#DM">DM</a>                dmCoord;
+<a name="line717">717: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>       ****arrSol,****arrCoord;
+
+<a name="line720">720: </a>  <a href="../../../../../../docs/manualpages/DM/DMCreateGlobalVector.html#DMCreateGlobalVector">DMCreateGlobalVector</a>(dmSol,pSolRef);
+<a name="line721">721: </a>  solRef = *pSolRef;
+<a name="line722">722: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetCorners.html#DMStagGetCorners">DMStagGetCorners</a>(dmSol,&amp;start[0],&amp;start[1],&amp;start[2],&amp;n[0],&amp;n[1],&amp;n[2],&amp;nExtra[0],&amp;nExtra[1],&amp;nExtra[2]);
+<a name="line723">723: </a>  <a href="../../../../../../docs/manualpages/DM/DMGetCoordinateDM.html#DMGetCoordinateDM">DMGetCoordinateDM</a>(dmSol,&amp;dmCoord);
+<a name="line724">724: </a>  <a href="../../../../../../docs/manualpages/DM/DMGetCoordinates.html#DMGetCoordinates">DMGetCoordinates</a>(dmSol,&amp;coord);
+<a name="line725">725: </a>  <a href="../../../../../../docs/manualpages/DM/DMGetLocalVector.html#DMGetLocalVector">DMGetLocalVector</a>(dmCoord,&amp;coordLocal);
+<a name="line726">726: </a>  <a href="../../../../../../docs/manualpages/DM/DMGlobalToLocal.html#DMGlobalToLocal">DMGlobalToLocal</a>(dmCoord,coord,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>,coordLocal);
+<a name="line727">727: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmSol,ELEMENT,0,&amp;ip );
+<a name="line728">728: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmSol,LEFT,   0,&amp;iux);
+<a name="line729">729: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmSol,DOWN,   0,&amp;iuy);
+<a name="line730">730: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmSol,BACK,   0,&amp;iuz);
+<a name="line731">731: </a>  <font color="#4169E1">for</font> (d=0; d&lt;3; ++d) {
+<a name="line732">732: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,ELEMENT,d,&amp;icp[d] );
+<a name="line733">733: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,LEFT,   d,&amp;icux[d]);
+<a name="line734">734: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,DOWN,   d,&amp;icuy[d]);
+<a name="line735">735: </a>    <a href="../../../../../../docs/manualpages/DMSTAG/DMStagGetLocationSlot.html#DMStagGetLocationSlot">DMStagGetLocationSlot</a>(dmCoord,BACK,   d,&amp;icuz[d]);
+<a name="line736">736: </a>  }
+<a name="line737">737: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecGetArrayDOFRead.html#DMStagVecGetArrayDOFRead">DMStagVecGetArrayDOFRead</a>(dmCoord,coordLocal,&amp;arrCoord);
+<a name="line738">738: </a>  <a href="../../../../../../docs/manualpages/DM/DMGetLocalVector.html#DMGetLocalVector">DMGetLocalVector</a>(dmSol,&amp;solRefLocal);
+<a name="line739">739: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecGetArrayDOF.html#DMStagVecGetArrayDOF">DMStagVecGetArrayDOF</a>(dmSol,solRefLocal,&amp;arrSol);
+<a name="line740">740: </a>  <font color="#4169E1">for</font> (ez=start[2]; ez&lt;start[2] + n[2] + nExtra[2]; ++ez) {
+<a name="line741">741: </a>    <font color="#4169E1">for</font> (ey=start[1]; ey&lt;start[1] + n[1] + nExtra[1]; ++ey) {
+<a name="line742">742: </a>      <font color="#4169E1">for</font> (ex=start[0]; ex&lt;start[0] + n[0] + nExtra[0]; ++ex) {
+<a name="line743">743: </a>        <font color="#4169E1">if</font> (ex &lt; start[0] + n[0] &amp;&amp; ey &lt; start[1] + n[1]) {
+<a name="line744">744: </a>          arrSol[ez][ey][ex][iuz] = uzRef(
+<a name="line745">745: </a>              arrCoord[ez][ey][ex][icuz[0]],
+<a name="line746">746: </a>              arrCoord[ez][ey][ex][icuz[1]],
+<a name="line747">747: </a>              arrCoord[ez][ey][ex][icuz[2]]);
+<a name="line748">748: </a>        }
+<a name="line749">749: </a>        <font color="#4169E1">if</font> (ex &lt; start[0] + n[0] &amp;&amp; ey &lt; start[2] + n[2]) {
+<a name="line750">750: </a>          arrSol[ez][ey][ex][iuy] = uyRef(
+<a name="line751">751: </a>              arrCoord[ez][ey][ex][icuy[0]],
+<a name="line752">752: </a>              arrCoord[ez][ey][ex][icuy[1]],
+<a name="line753">753: </a>              arrCoord[ez][ey][ex][icuy[2]]);
+<a name="line754">754: </a>        }
+<a name="line755">755: </a>        <font color="#4169E1">if</font> (ex &lt; start[1] + n[1] &amp;&amp; ey &lt; start[2] + n[2]) {
+<a name="line756">756: </a>          arrSol[ez][ey][ex][iux] = uxRef(
+<a name="line757">757: </a>              arrCoord[ez][ey][ex][icux[0]],
+<a name="line758">758: </a>              arrCoord[ez][ey][ex][icux[1]],
+<a name="line759">759: </a>              arrCoord[ez][ey][ex][icux[2]]);
+<a name="line760">760: </a>        }
+<a name="line761">761: </a>        <font color="#4169E1">if</font> (ex &lt; start[0] + n[0] &amp;&amp; ey &lt; start[1] + n[1] &amp;&amp; ez &lt; start[2] + n[2]) {
+<a name="line762">762: </a>          arrSol[ez][ey][ex][ip]  = pRef(
+<a name="line763">763: </a>              arrCoord[ez][ey][ex][icp[0]],
+<a name="line764">764: </a>              arrCoord[ez][ey][ex][icp[1]],
+<a name="line765">765: </a>              arrCoord[ez][ey][ex][icp[2]]);
+<a name="line766">766: </a>        }
+<a name="line767">767: </a>      }
+<a name="line768">768: </a>    }
+<a name="line769">769: </a>  }
+<a name="line770">770: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecRestoreArrayDOFRead.html#DMStagVecRestoreArrayDOFRead">DMStagVecRestoreArrayDOFRead</a>(dmCoord,coordLocal,&amp;arrCoord);
+<a name="line771">771: </a>  <a href="../../../../../../docs/manualpages/DMSTAG/DMStagVecRestoreArrayDOF.html#DMStagVecRestoreArrayDOF">DMStagVecRestoreArrayDOF</a>(dmSol,solRefLocal,&amp;arrSol);
+<a name="line772">772: </a>  <a href="../../../../../../docs/manualpages/DM/DMLocalToGlobal.html#DMLocalToGlobal">DMLocalToGlobal</a>(dmSol,solRefLocal,<a href="../../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>,solRef);
+<a name="line773">773: </a>  <a href="../../../../../../docs/manualpages/DM/DMRestoreLocalVector.html#DMRestoreLocalVector">DMRestoreLocalVector</a>(dmCoord,&amp;coordLocal);
+<a name="line774">774: </a>  <a href="../../../../../../docs/manualpages/DM/DMRestoreLocalVector.html#DMRestoreLocalVector">DMRestoreLocalVector</a>(dmSol,&amp;solRefLocal);
+<a name="line775">775: </a>  <font color="#4169E1">return</font>(0);
+<a name="line776">776: </a>}
+
+<a name="line778">778: </a><strong><font color="#4169E1"><a name="CheckSolution"></a>static <a href="../../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a> CheckSolution(<a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a> sol,<a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a> solRef)</font></strong>
+<a name="line779">779: </a>{
+<a name="line781">781: </a>  <a href="../../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a>            diff;
+<a name="line782">782: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscReal.html#PetscReal">PetscReal</a>      normsolRef,errAbs,errRel;
+
+<a name="line785">785: </a>  <a href="../../../../../../docs/manualpages/Vec/VecDuplicate.html#VecDuplicate">VecDuplicate</a>(sol,&amp;diff);
+<a name="line786">786: </a>  <a href="../../../../../../docs/manualpages/Vec/VecCopy.html#VecCopy">VecCopy</a>(sol,diff);
+<a name="line787">787: </a>  <a href="../../../../../../docs/manualpages/Vec/VecAXPY.html#VecAXPY">VecAXPY</a>(diff,-1.0,solRef);
+<a name="line788">788: </a>  <a href="../../../../../../docs/manualpages/Vec/VecNorm.html#VecNorm">VecNorm</a>(diff,<a href="../../../../../../docs/manualpages/Vec/NORM_2.html#NORM_2">NORM_2</a>,&amp;errAbs);
+<a name="line789">789: </a>  <a href="../../../../../../docs/manualpages/Vec/VecNorm.html#VecNorm">VecNorm</a>(solRef,<a href="../../../../../../docs/manualpages/Vec/NORM_2.html#NORM_2">NORM_2</a>,&amp;normsolRef);
+<a name="line790">790: </a>  errRel = errAbs/normsolRef;
+<a name="line791">791: </a>  <a href="../../../../../../docs/manualpages/Sys/PetscPrintf.html#PetscPrintf">PetscPrintf</a>(<a href="../../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,<font color="#666666">"Error (abs): %g\nError (rel): %g\n"</font>,(double)errAbs,(double)errRel);
+<a name="line792">792: </a>  <a href="../../../../../../docs/manualpages/Vec/VecDestroy.html#VecDestroy">VecDestroy</a>(&amp;diff);
+<a name="line793">793: </a>  <font color="#4169E1">return</font>(0);
+<a name="line794">794: </a>}
+
+<a name="line796">796: </a><font color="#B22222">/*TEST</font>
+
+<a name="line798">798: </a><font color="#B22222">   test:</font>
+<a name="line799">799: </a><font color="#B22222">      suffix: 1</font>
+<a name="line800">800: </a><font color="#B22222">      requires: mumps</font>
+<a name="line801">801: </a><font color="#B22222">      nsize: 27</font>
+<a name="line802">802: </a><font color="#B22222">      args: -ksp_monitor_short -ksp_converged_reason -stag_ranks_x 3 -stag_ranks_y 3 -stag_ranks_z 3 -pc_fieldsplit_schur_fact_type diag -fieldsplit_0_ksp_type preonly -fieldsplit_1_pc_type none -fieldsplit_0_pc_type lu -fieldsplit_1_ksp_type gmres -fieldsplit_1_ksp_max_it 20</font>
+
+<a name="line804">804: </a><font color="#B22222">   test:</font>
+<a name="line805">805: </a><font color="#B22222">      suffix: 2</font>
+<a name="line806">806: </a><font color="#B22222">      requires: !single</font>
+<a name="line807">807: </a><font color="#B22222">      nsize: 4</font>
+<a name="line808">808: </a><font color="#B22222">      args: -ksp_monitor_short -ksp_converged_reason -pc_fieldsplit_schur_fact_type diag -fieldsplit_0_ksp_type preonly -fieldsplit_1_pc_type none -fieldsplit_0_pc_type gamg -fieldsplit_0_mg_levels_ksp_max_it 3 -fieldsplit_1_ksp_type gmres -fieldsplit_1_ksp_max_it 20</font>
+
+<a name="line810">810: </a><font color="#B22222">   test:</font>
+<a name="line811">811: </a><font color="#B22222">      suffix: direct_umfpack</font>
+<a name="line812">812: </a><font color="#B22222">      requires: suitesparse</font>
+<a name="line813">813: </a><font color="#B22222">      nsize: 1</font>
+<a name="line814">814: </a><font color="#B22222">      args: -pinpressure 1 -stag_grid_x 5 -stag_grid_y 3 -stag_grid_z 4 -ksp_monitor_short -pc_type lu -pc_factor_mat_solver_type umfpack</font>
+
+<a name="line816">816: </a><font color="#B22222">TEST*/</font>
+</pre>
+</body>
+
+</html>

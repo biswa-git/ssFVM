@@ -1,0 +1,432 @@
+<center><a href="ex5f.F90">Actual source code: ex5f.F90</a></center><br>
+
+<html>
+<head> <link rel="canonical" href="http://www.mcs.anl.gov/petsc/petsc-current/src/ksp/ksp/examples/tutorials/ex5f.F90.html" />
+<title></title>
+<meta name="generator" content="c2html 0.9.4">
+<meta name="date" content="2019-06-26T21:49:15+00:00">
+</head>
+
+<body bgcolor="#FFFFFF">
+   <div id="version" align=right><b>petsc-3.11.3 2019-06-26</b></div>
+   <div id="bugreport" align=right><a href="mailto:petsc-maint@mcs.anl.gov?subject=Typo or Error in Documentation &body=Please describe the typo or error in the documentation: petsc-3.11.3 v3.11.3 src/ksp/ksp/examples/tutorials/ex5f.F90.html "><small>Report Typos and Errors</small></a></div>
+<pre width="80">
+<a name="line1">  1: </a>      !Solves two linear systems in parallel with <a href="../../../../../docs/manualpages/KSP/KSP.html#KSP">KSP</a>.  The code
+<a name="line2">  2: </a>      !illustrates repeated solution of linear systems with the same preconditioner
+<a name="line3">  3: </a>      !method but different matrices (having the same nonzero structure).  The code
+<a name="line4">  4: </a>      !also uses multiple profiling stages.  Input arguments are
+<a name="line5">  5: </a>      !  -m &lt;size&gt; : problem size
+<a name="line6">  6: </a>      !  -mat_nonsym : use nonsymmetric matrix (<font color="#4169E1">default</font> is symmetric)
+
+<a name="line8">  8: </a>      !Concepts: <a href="../../../../../docs/manualpages/KSP/KSP.html#KSP">KSP</a>^repeatedly solving linear systems;
+<a name="line9">  9: </a>      !Concepts: PetscLog^profiling multiple stages of code;
+<a name="line10"> 10: </a>      !Processors: n
+
+<a name="line12"> 12: </a>program main
+<a name="line13"> 13: </a> #include <A href="../../../../../include/petsc/finclude/petscksp.h.html">&lt;petsc/finclude/petscksp.h&gt;</A>
+<a name="line14"> 14: </a>      use petscksp
+<a name="line15"> 15: </a>
+<a name="line16"> 16: </a>      implicit none
+<a name="line17"> 17: </a>      <a href="../../../../../docs/manualpages/KSP/KSP.html#KSP">KSP</a>            :: myKsp            ! linear solver context
+<a name="line18"> 18: </a>      <a href="../../../../../docs/manualpages/Mat/Mat.html#Mat">Mat</a>            :: C,Ctmp           ! matrix
+<a name="line19"> 19: </a>      <a href="../../../../../docs/manualpages/Vec/Vec.html#Vec">Vec</a>            :: x,u,b            ! approx solution, RHS, exact solution
+<a name="line20"> 20: </a>      <a href="../../../../../docs/manualpages/Sys/PetscReal.html#PetscReal">PetscReal</a>      :: norm             ! norm of solution error
+<a name="line21"> 21: </a>      <a href="../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>    :: v
+<a name="line22"> 22: </a>      <a href="../../../../../docs/manualpages/Sys/PetscScalar.html#PetscScalar">PetscScalar</a>, parameter :: myNone = -1.0
+<a name="line23"> 23: </a>      <a href="../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>       :: Ii,JJ,ldim,low,high,iglobal,Istart,Iend
+<a name="line24"> 24: </a>      <a href="../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a> :: ierr
+<a name="line25"> 25: </a>      <a href="../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>       :: i,j,its,n
+<a name="line26"> 26: </a>      <a href="../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>, parameter :: m = 3
+<a name="line27"> 27: </a>      <a href="../../../../../docs/manualpages/Sys/PetscMPIInt.html#PetscMPIInt">PetscMPIInt</a>    :: mySize,myRank
+<a name="line28"> 28: </a>      <a href="../../../../../docs/manualpages/Sys/PetscBool.html#PetscBool">PetscBool</a>, parameter :: &amp;
+<a name="line29"> 29: </a>        testnewC         = <a href="../../../../../docs/manualpages/Sys/PETSC_FALSE.html#PETSC_FALSE">PETSC_FALSE</a>, &amp;
+<a name="line30"> 30: </a>        testscaledMat    = <a href="../../../../../docs/manualpages/Sys/PETSC_FALSE.html#PETSC_FALSE">PETSC_FALSE</a>, &amp;
+<a name="line31"> 31: </a>        mat_nonsymmetric = <a href="../../../../../docs/manualpages/Sys/PETSC_FALSE.html#PETSC_FALSE">PETSC_FALSE</a>
+<a name="line32"> 32: </a>      <a href="../../../../../docs/manualpages/Sys/PetscBool.html#PetscBool">PetscBool</a>      :: flg
+<a name="line33"> 33: </a>      <a href="../../../../../docs/manualpages/Sys/PetscRandom.html#PetscRandom">PetscRandom</a>    :: rctx
+<a name="line34"> 34: </a>      <a href="../../../../../docs/manualpages/Profiling/PetscLogStage.html#PetscLogStage">PetscLogStage</a>,dimension(2) :: stages
+<a name="line35"> 35: </a>      character(len=80)          :: outputString
+<a name="line36"> 36: </a>
+<a name="line37"> 37: </a>      call <a href="../../../../../docs/manualpages/Sys/PetscInitialize.html#PetscInitialize">PetscInitialize</a>(PETSC_NULL_CHARACTER,ierr)
+<a name="line38"> 38: </a>      <font color="#4169E1">if</font> (ierr /= 0) then
+<a name="line39"> 39: </a>        write(6,*)'Unable to initialize PETSc'
+<a name="line40"> 40: </a>        stop
+<a name="line41"> 41: </a>      endif
+<a name="line42"> 42: </a>
+<a name="line43"> 43: </a>      call <a href="../../../../../docs/manualpages/Sys/PetscOptionsGetInt.html#PetscOptionsGetInt">PetscOptionsGetInt</a>(PETSC_NULL_OPTIONS,PETSC_NULL_CHARACTER,'-m',m,flg,ierr)
+<a name="line44"> 44: </a>      CHKERRA(ierr)
+<a name="line45"> 45: </a>      call <a href="http://www.mpich.org/static/docs/latest/www3/MPI_Comm_rank.html#MPI_Comm_rank">MPI_Comm_rank</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,myRank,ierr)
+<a name="line46"> 46: </a>      CHKERRA(ierr)
+<a name="line47"> 47: </a>      call <a href="http://www.mpich.org/static/docs/latest/www3/MPI_Comm_size.html#MPI_Comm_size">MPI_Comm_size</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,mySize,ierr)
+<a name="line48"> 48: </a>      CHKERRA(ierr)
+<a name="line49"> 49: </a>      n=2*mySize
+
+<a name="line51"> 51: </a>
+<a name="line52"> 52: </a>      ! Set flag <font color="#4169E1">if</font> we are doing a nonsymmetric problem; the <font color="#4169E1">default</font> is symmetric.
+<a name="line53"> 53: </a>
+<a name="line54"> 54: </a>      call <a href="../../../../../docs/manualpages/Sys/PetscOptionsGetBool.html#PetscOptionsGetBool">PetscOptionsGetBool</a>(PETSC_NULL_OPTIONS,PETSC_NULL_CHARACTER,<font color="#666666">"-mat_nonsym"</font>,mat_nonsymmetric,flg,ierr)
+<a name="line55"> 55: </a>      CHKERRA(ierr)
+<a name="line56"> 56: </a>      call <a href="../../../../../docs/manualpages/Sys/PetscOptionsGetBool.html#PetscOptionsGetBool">PetscOptionsGetBool</a>(PETSC_NULL_OPTIONS,PETSC_NULL_CHARACTER,<font color="#666666">"-test_scaledMat"</font>,testscaledMat,flg,ierr)
+<a name="line57"> 57: </a>      CHKERRA(ierr)
+<a name="line58"> 58: </a>
+<a name="line59"> 59: </a>      ! Register two stages <font color="#4169E1">for</font> separate profiling of the two linear solves.
+<a name="line60"> 60: </a>      ! Use the runtime option -log_view <font color="#4169E1">for</font> a printout of performance
+<a name="line61"> 61: </a>      ! statistics at the program's conlusion.
+
+<a name="line63"> 63: </a>      call <a href="../../../../../docs/manualpages/Profiling/PetscLogStageRegister.html#PetscLogStageRegister">PetscLogStageRegister</a>(<font color="#666666">"Original Solve"</font>,stages(1),ierr)
+<a name="line64"> 64: </a>      CHKERRA(ierr)
+<a name="line65"> 65: </a>      call <a href="../../../../../docs/manualpages/Profiling/PetscLogStageRegister.html#PetscLogStageRegister">PetscLogStageRegister</a>(<font color="#666666">"Second Solve"</font>,stages(2),ierr)
+<a name="line66"> 66: </a>      CHKERRA(ierr)
+<a name="line67"> 67: </a>
+<a name="line68"> 68: </a>      ! -------------- Stage 0: Solve Original System ----------------------
+<a name="line69"> 69: </a>      ! Indicate to PETSc profiling that we're beginning the first stage
+<a name="line70"> 70: </a>
+<a name="line71"> 71: </a>      call <a href="../../../../../docs/manualpages/Profiling/PetscLogStagePush.html#PetscLogStagePush">PetscLogStagePush</a>(stages(1),ierr)
+<a name="line72"> 72: </a>      CHKERRA(ierr)
+<a name="line73"> 73: </a>
+<a name="line74"> 74: </a>      ! Create parallel matrix, specifying only its global dimensions.
+<a name="line75"> 75: </a>      ! When using <a href="../../../../../docs/manualpages/Mat/MatCreate.html#MatCreate">MatCreate</a>(), the matrix format can be specified at
+<a name="line76"> 76: </a>      ! runtime. Also, the parallel partitioning of the matrix is
+<a name="line77"> 77: </a>      ! determined by PETSc at runtime.
+<a name="line78"> 78: </a>
+<a name="line79"> 79: </a>      call <a href="../../../../../docs/manualpages/Mat/MatCreate.html#MatCreate">MatCreate</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,C,ierr)
+<a name="line80"> 80: </a>      CHKERRA(ierr)
+<a name="line81"> 81: </a>      call <a href="../../../../../docs/manualpages/Mat/MatSetSizes.html#MatSetSizes">MatSetSizes</a>(C,<a href="../../../../../docs/manualpages/Sys/PETSC_DECIDE.html#PETSC_DECIDE">PETSC_DECIDE</a>,<a href="../../../../../docs/manualpages/Sys/PETSC_DECIDE.html#PETSC_DECIDE">PETSC_DECIDE</a>,m*n,m*n,ierr)
+<a name="line82"> 82: </a>      CHKERRA(ierr)
+<a name="line83"> 83: </a>      call <a href="../../../../../docs/manualpages/Mat/MatSetFromOptions.html#MatSetFromOptions">MatSetFromOptions</a>(C,ierr)
+<a name="line84"> 84: </a>      CHKERRA(ierr)
+<a name="line85"> 85: </a>      call <a href="../../../../../docs/manualpages/Mat/MatSetUp.html#MatSetUp">MatSetUp</a>(C,ierr)
+<a name="line86"> 86: </a>      CHKERRA(ierr)
+
+<a name="line88"> 88: </a>      ! Currently, all PETSc parallel matrix formats are partitioned by
+<a name="line89"> 89: </a>      ! contiguous chunks of rows across the processors.  Determine which
+<a name="line90"> 90: </a>      ! rows of the matrix are locally owned.
+<a name="line91"> 91: </a>
+<a name="line92"> 92: </a>      call <a href="../../../../../docs/manualpages/Mat/MatGetOwnershipRange.html#MatGetOwnershipRange">MatGetOwnershipRange</a>(C,Istart,Iend,ierr)
+<a name="line93"> 93: </a>
+<a name="line94"> 94: </a>      ! Set matrix entries matrix in parallel.
+<a name="line95"> 95: </a>      ! - Each processor needs to insert only elements that it owns
+<a name="line96"> 96: </a>      ! locally (but any non-local elements will be sent to the
+<a name="line97"> 97: </a>      ! appropriate processor during matrix assembly).
+<a name="line98"> 98: </a>      !- Always specify global row and columns of matrix entries.
+
+<a name="line100">100: </a><strong><font color="#FF0000">      intitializeC:</font></strong> <font color="#4169E1">do</font> Ii=Istart,Iend-1
+<a name="line101">101: </a>          v =-1.0; i = Ii/n; j = Ii - i*n
+<a name="line102">102: </a>          <font color="#4169E1">if</font> (i&gt;0) then
+<a name="line103">103: </a>            JJ = Ii - n
+<a name="line104">104: </a>            call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line105">105: </a>            CHKERRA(ierr)
+<a name="line106">106: </a>          endif
+<a name="line107">107: </a>
+<a name="line108">108: </a>          <font color="#4169E1">if</font> (i&lt;m-1) then
+<a name="line109">109: </a>            JJ = Ii + n
+<a name="line110">110: </a>            call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line111">111: </a>            CHKERRA(ierr)
+<a name="line112">112: </a>          endif
+<a name="line113">113: </a>
+<a name="line114">114: </a>          <font color="#4169E1">if</font> (j&gt;0) then
+<a name="line115">115: </a>            JJ = Ii - 1
+<a name="line116">116: </a>            call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line117">117: </a>            CHKERRA(ierr)
+<a name="line118">118: </a>          endif
+<a name="line119">119: </a>
+<a name="line120">120: </a>          <font color="#4169E1">if</font> (j&lt;n-1) then
+<a name="line121">121: </a>            JJ = Ii + 1
+<a name="line122">122: </a>            call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line123">123: </a>            CHKERRA(ierr)
+<a name="line124">124: </a>          endif
+<a name="line125">125: </a>
+<a name="line126">126: </a>          v=4.0
+<a name="line127">127: </a>          call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,Ii,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line128">128: </a>          CHKERRA(ierr)
+<a name="line129">129: </a>
+<a name="line130">130: </a>      enddo intitializeC
+<a name="line131">131: </a>
+<a name="line132">132: </a>      ! Make the matrix nonsymmetric <font color="#4169E1">if</font> desired
+<a name="line133">133: </a>      <font color="#4169E1">if</font> (mat_nonsymmetric) then
+<a name="line134">134: </a>        <font color="#4169E1">do</font> Ii=Istart,Iend-1
+<a name="line135">135: </a>          v=-1.5; i=Ii/n
+<a name="line136">136: </a>          <font color="#4169E1">if</font> (i&gt;1) then
+<a name="line137">137: </a>            JJ=Ii-n-1
+<a name="line138">138: </a>            call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line139">139: </a>            CHKERRA(ierr)
+<a name="line140">140: </a>          endif
+<a name="line141">141: </a>        enddo
+<a name="line142">142: </a>      <font color="#4169E1">else</font>
+<a name="line143">143: </a>        call <a href="../../../../../docs/manualpages/Mat/MatSetOption.html#MatSetOption">MatSetOption</a>(C,<a href="../../../../../docs/manualpages/Mat/MatOption.html#MatOption">MAT_SYMMETRIC</a>,<a href="../../../../../docs/manualpages/Sys/PETSC_TRUE.html#PETSC_TRUE">PETSC_TRUE</a>,ierr)
+<a name="line144">144: </a>        CHKERRA(ierr)
+<a name="line145">145: </a>        call <a href="../../../../../docs/manualpages/Mat/MatSetOption.html#MatSetOption">MatSetOption</a>(C,<a href="../../../../../docs/manualpages/Mat/MatOption.html#MatOption">MAT_SYMMETRY_ETERNAL</a>,<a href="../../../../../docs/manualpages/Sys/PETSC_TRUE.html#PETSC_TRUE">PETSC_TRUE</a>,ierr)
+<a name="line146">146: </a>        CHKERRA(ierr)
+<a name="line147">147: </a>      endif
+<a name="line148">148: </a>
+<a name="line149">149: </a>      ! Assemble matrix, using the 2-step process:
+<a name="line150">150: </a>      ! <a href="../../../../../docs/manualpages/Mat/MatAssemblyBegin.html#MatAssemblyBegin">MatAssemblyBegin</a>(), <a href="../../../../../docs/manualpages/Mat/MatAssemblyEnd.html#MatAssemblyEnd">MatAssemblyEnd</a>()
+<a name="line151">151: </a>      ! Computations can be done <font color="#4169E1">while</font> messages are in transition
+<a name="line152">152: </a>      ! by placing code between these two statements.
+<a name="line153">153: </a>
+<a name="line154">154: </a>      call <a href="../../../../../docs/manualpages/Mat/MatAssemblyBegin.html#MatAssemblyBegin">MatAssemblyBegin</a>(C,<a href="../../../../../docs/manualpages/Mat/MatAssemblyType.html#MatAssemblyType">MAT_FINAL_ASSEMBLY</a>,ierr)
+<a name="line155">155: </a>      CHKERRA(ierr)
+<a name="line156">156: </a>      call <a href="../../../../../docs/manualpages/Mat/MatAssemblyEnd.html#MatAssemblyEnd">MatAssemblyEnd</a>(C,<a href="../../../../../docs/manualpages/Mat/MatAssemblyType.html#MatAssemblyType">MAT_FINAL_ASSEMBLY</a>,ierr)
+<a name="line157">157: </a>      CHKERRA(ierr)
+
+<a name="line159">159: </a>      ! Create parallel vectors.
+<a name="line160">160: </a>      ! - When using <a href="../../../../../docs/manualpages/Vec/VecSetSizes.html#VecSetSizes">VecSetSizes</a>(), we specify only the vector's global
+<a name="line161">161: </a>      !   dimension; the parallel partitioning is determined at runtime.
+<a name="line162">162: </a>      ! - Note: We form 1 vector from scratch and then duplicate as needed.
+<a name="line163">163: </a>
+<a name="line164">164: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecCreate.html#VecCreate">VecCreate</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,u,ierr)
+<a name="line165">165: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecSetSizes.html#VecSetSizes">VecSetSizes</a>(u,<a href="../../../../../docs/manualpages/Sys/PETSC_DECIDE.html#PETSC_DECIDE">PETSC_DECIDE</a>,m*n,ierr)
+<a name="line166">166: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecSetFromOptions.html#VecSetFromOptions">VecSetFromOptions</a>(u,ierr)
+<a name="line167">167: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecDuplicate.html#VecDuplicate">VecDuplicate</a>(u,b,ierr)
+<a name="line168">168: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecDuplicate.html#VecDuplicate">VecDuplicate</a>(b,x,ierr)
+
+<a name="line170">170: </a>      ! Currently, all parallel PETSc vectors are partitioned by
+<a name="line171">171: </a>      ! contiguous chunks across the processors.  Determine which
+<a name="line172">172: </a>      ! range of entries are locally owned.
+<a name="line173">173: </a>
+<a name="line174">174: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecGetOwnershipRange.html#VecGetOwnershipRange">VecGetOwnershipRange</a>(x,low,high,ierr)
+<a name="line175">175: </a>      CHKERRA(ierr)
+
+<a name="line177">177: </a>      !Set elements within the exact solution vector in parallel.
+<a name="line178">178: </a>      ! - Each processor needs to insert only elements that it owns
+<a name="line179">179: </a>      ! locally (but any non-local entries will be sent to the
+<a name="line180">180: </a>      ! appropriate processor during vector assembly).
+<a name="line181">181: </a>      ! - Always specify global locations of vector entries.
+
+<a name="line183">183: </a>      call <a href="../../../../../docs/manualpages/Vec/VecGetLocalSize.html#VecGetLocalSize">VecGetLocalSize</a>(x,ldim,ierr)
+<a name="line184">184: </a>      CHKERRA(ierr)
+<a name="line185">185: </a>      <font color="#4169E1">do</font> i=0,ldim-1
+<a name="line186">186: </a>        iglobal = i + low
+<a name="line187">187: </a>        v = real(i + 100*myRank)
+<a name="line188">188: </a>        call <a href="../../../../../docs/manualpages/Vec/VecSetValues.html#VecSetValues">VecSetValues</a>(u,1,iglobal,v,<a href="../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>,ierr)
+<a name="line189">189: </a>        CHKERRA(ierr)
+<a name="line190">190: </a>      enddo
+
+<a name="line192">192: </a>      ! Assemble vector, using the 2-step process:
+<a name="line193">193: </a>      ! <a href="../../../../../docs/manualpages/Vec/VecAssemblyBegin.html#VecAssemblyBegin">VecAssemblyBegin</a>(), <a href="../../../../../docs/manualpages/Vec/VecAssemblyEnd.html#VecAssemblyEnd">VecAssemblyEnd</a>()
+<a name="line194">194: </a>      ! Computations can be done <font color="#4169E1">while</font> messages are in transition,
+<a name="line195">195: </a>      ! by placing code between these two statements.
+<a name="line196">196: </a>
+<a name="line197">197: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecAssemblyBegin.html#VecAssemblyBegin">VecAssemblyBegin</a>(u,ierr)
+<a name="line198">198: </a>      CHKERRA(ierr)
+<a name="line199">199: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecAssemblyEnd.html#VecAssemblyEnd">VecAssemblyEnd</a>(u,ierr)
+<a name="line200">200: </a>      CHKERRA(ierr)
+<a name="line201">201: </a>
+<a name="line202">202: </a>      ! Compute right-hand-side vector
+<a name="line203">203: </a>
+<a name="line204">204: </a>      call  <a href="../../../../../docs/manualpages/Mat/MatMult.html#MatMult">MatMult</a>(C,u,b,ierr)
+
+<a name="line206">206: </a>      CHKERRA(ierr)
+<a name="line207">207: </a>
+<a name="line208">208: </a>      ! Create linear solver context
+
+<a name="line210">210: </a>      call  <a href="../../../../../docs/manualpages/KSP/KSPCreate.html#KSPCreate">KSPCreate</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,myKsp,ierr)
+<a name="line211">211: </a>      CHKERRA(ierr)
+<a name="line212">212: </a>      ! Set operators. Here the matrix that defines the linear system
+<a name="line213">213: </a>      ! also serves as the preconditioning matrix.
+
+<a name="line215">215: </a>      call  <a href="../../../../../docs/manualpages/KSP/KSPSetOperators.html#KSPSetOperators">KSPSetOperators</a>(myKsp,C,C,ierr)
+<a name="line216">216: </a>      CHKERRA(ierr)
+<a name="line217">217: </a>      ! Set runtime options (e.g., -ksp_type &lt;type&gt; -pc_type &lt;type&gt;)
+
+<a name="line219">219: </a>      call  <a href="../../../../../docs/manualpages/KSP/KSPSetFromOptions.html#KSPSetFromOptions">KSPSetFromOptions</a>(myKsp,ierr)
+<a name="line220">220: </a>      CHKERRA(ierr)
+<a name="line221">221: </a>      ! Solve linear system.  Here we explicitly call <a href="../../../../../docs/manualpages/KSP/KSPSetUp.html#KSPSetUp">KSPSetUp</a>() <font color="#4169E1">for</font> more
+<a name="line222">222: </a>      ! detailed performance monitoring of certain preconditioners, such
+<a name="line223">223: </a>      ! as ICC and ILU.  This call is optional, as <a href="../../../../../docs/manualpages/KSP/KSPSetUp.html#KSPSetUp">KSPSetUp</a>() will
+<a name="line224">224: </a>      ! automatically be called within <a href="../../../../../docs/manualpages/KSP/KSPSolve.html#KSPSolve">KSPSolve</a>() <font color="#4169E1">if</font> it hasn't been
+<a name="line225">225: </a>      ! called already.
+
+<a name="line227">227: </a>      call  <a href="../../../../../docs/manualpages/KSP/KSPSetUp.html#KSPSetUp">KSPSetUp</a>(myKsp,ierr)
+<a name="line228">228: </a>      CHKERRA(ierr)
+
+<a name="line230">230: </a>      call  <a href="../../../../../docs/manualpages/KSP/KSPSolve.html#KSPSolve">KSPSolve</a>(myKsp,b,x,ierr)
+<a name="line231">231: </a>      CHKERRA(ierr)
+
+<a name="line233">233: </a>      ! Check the error
+<a name="line234">234: </a>
+<a name="line235">235: </a>      call <a href="../../../../../docs/manualpages/Vec/VecAXPY.html#VecAXPY">VecAXPY</a>(x,myNone,u,ierr)
+<a name="line236">236: </a>      call <a href="../../../../../docs/manualpages/Vec/VecNorm.html#VecNorm">VecNorm</a>(x,<a href="../../../../../docs/manualpages/Vec/NORM_2.html#NORM_2">NORM_2</a>,norm,ierr)
+
+<a name="line238">238: </a>      call <a href="../../../../../docs/manualpages/KSP/KSPGetIterationNumber.html#KSPGetIterationNumber">KSPGetIterationNumber</a>(myKsp,its,ierr)
+<a name="line239">239: </a>      <font color="#4169E1">if</font> (.not. testscaledMat .or. norm &gt; 1.e-7) then
+<a name="line240">240: </a>        write(outputString,*)'Norm of error',norm,'Iterations',its,'\n'
+<a name="line241">241: </a>        call <a href="../../../../../docs/manualpages/Sys/PetscPrintf.html#PetscPrintf">PetscPrintf</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,outputString,ierr)
+<a name="line242">242: </a>      endif
+<a name="line243">243: </a>
+<a name="line244">244: </a>      ! -------------- Stage 1: Solve Second System ----------------------
+<a name="line245">245: </a>
+<a name="line246">246: </a>      ! Solve another linear system with the same method.  We reuse the <a href="../../../../../docs/manualpages/KSP/KSP.html#KSP">KSP</a>
+<a name="line247">247: </a>      ! context, matrix and vector data structures, and hence save the
+<a name="line248">248: </a>      ! overhead of creating new ones.
+
+<a name="line250">250: </a>      ! Indicate to PETSc profiling that we're concluding the first
+<a name="line251">251: </a>      ! stage with <a href="../../../../../docs/manualpages/Profiling/PetscLogStagePop.html#PetscLogStagePop">PetscLogStagePop</a>(), and beginning the second stage with
+<a name="line252">252: </a>      ! <a href="../../../../../docs/manualpages/Profiling/PetscLogStagePush.html#PetscLogStagePush">PetscLogStagePush</a>().
+<a name="line253">253: </a>
+<a name="line254">254: </a>      call <a href="../../../../../docs/manualpages/Profiling/PetscLogStagePop.html#PetscLogStagePop">PetscLogStagePop</a>(ierr)
+<a name="line255">255: </a>      CHKERRA(ierr)
+<a name="line256">256: </a>      call <a href="../../../../../docs/manualpages/Profiling/PetscLogStagePush.html#PetscLogStagePush">PetscLogStagePush</a>(stages(2),ierr)
+<a name="line257">257: </a>      CHKERRA(ierr)
+<a name="line258">258: </a>
+<a name="line259">259: </a>      ! Initialize all matrix entries to zero.  <a href="../../../../../docs/manualpages/Mat/MatZeroEntries.html#MatZeroEntries">MatZeroEntries</a>() retains the
+<a name="line260">260: </a>      ! nonzero structure of the matrix <font color="#4169E1">for</font> sparse formats.
+<a name="line261">261: </a>
+<a name="line262">262: </a>      call <a href="../../../../../docs/manualpages/Mat/MatZeroEntries.html#MatZeroEntries">MatZeroEntries</a>(C,ierr)
+<a name="line263">263: </a>      CHKERRA(ierr)
+<a name="line264">264: </a>
+<a name="line265">265: </a>      ! Assemble matrix again.  Note that we retain the same matrix data
+<a name="line266">266: </a>      ! structure and the same nonzero pattern; we just change the values
+<a name="line267">267: </a>      ! of the matrix entries.
+<a name="line268">268: </a>
+<a name="line269">269: </a>      <font color="#4169E1">do</font> i=0,m-1
+<a name="line270">270: </a>        <font color="#4169E1">do</font> j=2*myRank,2*myRank+1
+<a name="line271">271: </a>          v =-1.0; Ii=j + n*i
+<a name="line272">272: </a>          <font color="#4169E1">if</font> (i&gt;0) then
+<a name="line273">273: </a>            JJ = Ii - n
+<a name="line274">274: </a>            call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line275">275: </a>            CHKERRA(ierr)
+<a name="line276">276: </a>          endif
+<a name="line277">277: </a>
+<a name="line278">278: </a>          <font color="#4169E1">if</font> (i&lt;m-1) then
+<a name="line279">279: </a>            JJ = Ii + n
+<a name="line280">280: </a>            call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line281">281: </a>            CHKERRA(ierr)
+<a name="line282">282: </a>          endif
+<a name="line283">283: </a>
+<a name="line284">284: </a>          <font color="#4169E1">if</font> (j&gt;0) then
+<a name="line285">285: </a>            JJ = Ii - 1
+<a name="line286">286: </a>            call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line287">287: </a>            CHKERRA(ierr)
+<a name="line288">288: </a>          endif
+<a name="line289">289: </a>
+<a name="line290">290: </a>          <font color="#4169E1">if</font> (j&lt;n-1) then
+<a name="line291">291: </a>            JJ = Ii + 1
+<a name="line292">292: </a>            call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line293">293: </a>            CHKERRA(ierr)
+<a name="line294">294: </a>          endif
+<a name="line295">295: </a>
+<a name="line296">296: </a>          v=6.0
+<a name="line297">297: </a>          call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line298">298: </a>          CHKERRA(ierr)
+<a name="line299">299: </a>
+<a name="line300">300: </a>        enddo
+<a name="line301">301: </a>      enddo
+<a name="line302">302: </a>
+<a name="line303">303: </a>      ! Make the matrix nonsymmetric <font color="#4169E1">if</font> desired
+<a name="line304">304: </a>
+<a name="line305">305: </a>      <font color="#4169E1">if</font> (mat_nonsymmetric) then
+<a name="line306">306: </a>        <font color="#4169E1">do</font> Ii=Istart,Iend-1
+<a name="line307">307: </a>          v=-1.5;  i=Ii/n
+<a name="line308">308: </a>          <font color="#4169E1">if</font> (i&gt;1) then
+<a name="line309">309: </a>            JJ=Ii-n-1
+<a name="line310">310: </a>            call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/ADD_VALUES.html#ADD_VALUES">ADD_VALUES</a>,ierr)
+<a name="line311">311: </a>            CHKERRA(ierr)
+<a name="line312">312: </a>          endif
+<a name="line313">313: </a>        enddo
+<a name="line314">314: </a>      <font color="#4169E1">else</font>
+<a name="line315">315: </a>          call <a href="../../../../../docs/manualpages/Mat/MatSetOption.html#MatSetOption">MatSetOption</a>(C,<a href="../../../../../docs/manualpages/Mat/MatOption.html#MatOption">MAT_SYMMETRIC</a>,<a href="../../../../../docs/manualpages/Sys/PETSC_TRUE.html#PETSC_TRUE">PETSC_TRUE</a>,ierr)
+<a name="line316">316: </a>          CHKERRA(ierr)
+<a name="line317">317: </a>          call <a href="../../../../../docs/manualpages/Mat/MatSetOption.html#MatSetOption">MatSetOption</a>(C,<a href="../../../../../docs/manualpages/Mat/MatOption.html#MatOption">MAT_SYMMETRY_ETERNAL</a>,<a href="../../../../../docs/manualpages/Sys/PETSC_TRUE.html#PETSC_TRUE">PETSC_TRUE</a>,ierr)
+<a name="line318">318: </a>          CHKERRA(ierr)
+<a name="line319">319: </a>      endif
+<a name="line320">320: </a>
+<a name="line321">321: </a>      ! Assemble matrix, using the 2-step process:
+<a name="line322">322: </a>      ! <a href="../../../../../docs/manualpages/Mat/MatAssemblyBegin.html#MatAssemblyBegin">MatAssemblyBegin</a>(), <a href="../../../../../docs/manualpages/Mat/MatAssemblyEnd.html#MatAssemblyEnd">MatAssemblyEnd</a>()
+<a name="line323">323: </a>      ! Computations can be done <font color="#4169E1">while</font> messages are in transition
+<a name="line324">324: </a>      ! by placing code between these two statements.
+<a name="line325">325: </a>
+<a name="line326">326: </a>      call <a href="../../../../../docs/manualpages/Mat/MatAssemblyBegin.html#MatAssemblyBegin">MatAssemblyBegin</a>(C,<a href="../../../../../docs/manualpages/Mat/MatAssemblyType.html#MatAssemblyType">MAT_FINAL_ASSEMBLY</a>,ierr)
+<a name="line327">327: </a>      CHKERRA(ierr)
+<a name="line328">328: </a>      call <a href="../../../../../docs/manualpages/Mat/MatAssemblyEnd.html#MatAssemblyEnd">MatAssemblyEnd</a>(C,<a href="../../../../../docs/manualpages/Mat/MatAssemblyType.html#MatAssemblyType">MAT_FINAL_ASSEMBLY</a>,ierr)
+<a name="line329">329: </a>      CHKERRA(ierr)
+<a name="line330">330: </a>
+<a name="line331">331: </a>      <font color="#4169E1">if</font> (testscaledMat) then
+<a name="line332">332: </a>        ! Scale a(0,0) and a(M-1,M-1)
+
+<a name="line334">334: </a>        <font color="#4169E1">if</font> (myRank /= 0) then
+<a name="line335">335: </a>          v = 6.0*0.00001; Ii = 0; JJ = 0
+<a name="line336">336: </a>          call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>,ierr)
+<a name="line337">337: </a>          CHKERRA(ierr)
+<a name="line338">338: </a>        elseif (myRank == mySize -1) then
+<a name="line339">339: </a>          v = 6.0*0.00001; Ii = m*n-1; JJ = m*n-1
+<a name="line340">340: </a>          call <a href="../../../../../docs/manualpages/Mat/MatSetValues.html#MatSetValues">MatSetValues</a>(C,1,Ii,1,JJ,v,<a href="../../../../../docs/manualpages/Sys/INSERT_VALUES.html#INSERT_VALUES">INSERT_VALUES</a>,ierr)
+<a name="line341">341: </a>
+<a name="line342">342: </a>        endif
+<a name="line343">343: </a>
+<a name="line344">344: </a>        call <a href="../../../../../docs/manualpages/Mat/MatAssemblyBegin.html#MatAssemblyBegin">MatAssemblyBegin</a>(C,<a href="../../../../../docs/manualpages/Mat/MatAssemblyType.html#MatAssemblyType">MAT_FINAL_ASSEMBLY</a>,ierr)
+<a name="line345">345: </a>        call <a href="../../../../../docs/manualpages/Mat/MatAssemblyEnd.html#MatAssemblyEnd">MatAssemblyEnd</a>(C,<a href="../../../../../docs/manualpages/Mat/MatAssemblyType.html#MatAssemblyType">MAT_FINAL_ASSEMBLY</a>,ierr)
+<a name="line346">346: </a>
+<a name="line347">347: </a>        ! Compute a new right-hand-side vector
+<a name="line348">348: </a>
+<a name="line349">349: </a>        call  <a href="../../../../../docs/manualpages/Vec/VecDestroy.html#VecDestroy">VecDestroy</a>(u,ierr)
+<a name="line350">350: </a>        call  <a href="../../../../../docs/manualpages/Vec/VecCreate.html#VecCreate">VecCreate</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,u,ierr)
+<a name="line351">351: </a>        call  <a href="../../../../../docs/manualpages/Vec/VecSetSizes.html#VecSetSizes">VecSetSizes</a>(u,<a href="../../../../../docs/manualpages/Sys/PETSC_DECIDE.html#PETSC_DECIDE">PETSC_DECIDE</a>,m*n,ierr)
+<a name="line352">352: </a>        call  <a href="../../../../../docs/manualpages/Vec/VecSetFromOptions.html#VecSetFromOptions">VecSetFromOptions</a>(u,ierr)
+
+<a name="line354">354: </a>        call  <a href="../../../../../docs/manualpages/Sys/PetscRandomCreate.html#PetscRandomCreate">PetscRandomCreate</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,rctx,ierr)
+<a name="line355">355: </a>        call  <a href="../../../../../docs/manualpages/Sys/PetscRandomSetFromOptions.html#PetscRandomSetFromOptions">PetscRandomSetFromOptions</a>(rctx,ierr)
+<a name="line356">356: </a>        call  <a href="../../../../../docs/manualpages/Vec/VecSetRandom.html#VecSetRandom">VecSetRandom</a>(u,rctx,ierr)
+<a name="line357">357: </a>        call  <a href="../../../../../docs/manualpages/Sys/PetscRandomDestroy.html#PetscRandomDestroy">PetscRandomDestroy</a>(rctx,ierr)
+<a name="line358">358: </a>        call  <a href="../../../../../docs/manualpages/Vec/VecAssemblyBegin.html#VecAssemblyBegin">VecAssemblyBegin</a>(u,ierr)
+<a name="line359">359: </a>        call  <a href="../../../../../docs/manualpages/Vec/VecAssemblyEnd.html#VecAssemblyEnd">VecAssemblyEnd</a>(u,ierr)
+<a name="line360">360: </a>
+<a name="line361">361: </a>      endif
+<a name="line362">362: </a>
+<a name="line363">363: </a>      call <a href="../../../../../docs/manualpages/Sys/PetscOptionsGetBool.html#PetscOptionsGetBool">PetscOptionsGetBool</a>(PETSC_NULL_OPTIONS,PETSC_NULL_CHARACTER,<font color="#666666">"-test_newMat"</font>,testnewC,flg,ierr)
+<a name="line364">364: </a>      CHKERRA(ierr)
+<a name="line365">365: </a>
+<a name="line366">366: </a>      <font color="#4169E1">if</font> (testnewC) then
+<a name="line367">367: </a>      ! User may use a new matrix C with same nonzero pattern, e.g.
+<a name="line368">368: </a>      ! ex5 -ksp_monitor -mat_type sbaij -pc_type cholesky -pc_factor_mat_solver_type mumps -test_newMat
+
+<a name="line370">370: </a>        call  <a href="../../../../../docs/manualpages/Mat/MatDuplicate.html#MatDuplicate">MatDuplicate</a>(C,<a href="../../../../../docs/manualpages/Mat/MatDuplicateOption.html#MatDuplicateOption">MAT_COPY_VALUES</a>,Ctmp,ierr)
+<a name="line371">371: </a>        call  <a href="../../../../../docs/manualpages/Mat/MatDestroy.html#MatDestroy">MatDestroy</a>(C,ierr)
+<a name="line372">372: </a>        call  <a href="../../../../../docs/manualpages/Mat/MatDuplicate.html#MatDuplicate">MatDuplicate</a>(Ctmp,<a href="../../../../../docs/manualpages/Mat/MatDuplicateOption.html#MatDuplicateOption">MAT_COPY_VALUES</a>,C,ierr)
+<a name="line373">373: </a>        call  <a href="../../../../../docs/manualpages/Mat/MatDestroy.html#MatDestroy">MatDestroy</a>(Ctmp,ierr)
+<a name="line374">374: </a>      endif
+<a name="line375">375: </a>
+<a name="line376">376: </a>      call <a href="../../../../../docs/manualpages/Mat/MatMult.html#MatMult">MatMult</a>(C,u,b,ierr);CHKERRA(ierr)
+
+<a name="line378">378: </a>      ! Set operators. Here the matrix that defines the linear system
+<a name="line379">379: </a>      ! also serves as the preconditioning matrix.
+<a name="line380">380: </a>
+<a name="line381">381: </a>      call <a href="../../../../../docs/manualpages/KSP/KSPSetOperators.html#KSPSetOperators">KSPSetOperators</a>(myKsp,C,C,ierr);CHKERRA(ierr)
+<a name="line382">382: </a>
+<a name="line383">383: </a>      ! Solve linear system
+<a name="line384">384: </a>
+<a name="line385">385: </a>      call  <a href="../../../../../docs/manualpages/KSP/KSPSetUp.html#KSPSetUp">KSPSetUp</a>(myKsp,ierr); CHKERRA(ierr)
+<a name="line386">386: </a>      call  <a href="../../../../../docs/manualpages/KSP/KSPSolve.html#KSPSolve">KSPSolve</a>(myKsp,b,x,ierr); CHKERRA(ierr)
+<a name="line387">387: </a>
+<a name="line388">388: </a>      ! Check the error
+<a name="line389">389: </a>
+<a name="line390">390: </a>      call <a href="../../../../../docs/manualpages/Vec/VecAXPY.html#VecAXPY">VecAXPY</a>(x,myNone,u,ierr); CHKERRA(ierr)
+<a name="line391">391: </a>      call <a href="../../../../../docs/manualpages/Vec/VecNorm.html#VecNorm">VecNorm</a>(x,<a href="../../../../../docs/manualpages/Vec/NORM_2.html#NORM_2">NORM_2</a>,norm,ierr); CHKERRA(ierr)
+<a name="line392">392: </a>      call <a href="../../../../../docs/manualpages/KSP/KSPGetIterationNumber.html#KSPGetIterationNumber">KSPGetIterationNumber</a>(myKsp,its,ierr); CHKERRA(ierr)
+<a name="line393">393: </a>      <font color="#4169E1">if</font> (.not. testscaledMat .or. norm &gt; 1.e-7) then
+<a name="line394">394: </a>        write(outputString,*)'Norm of error',norm,'Iterations',its,'\n'
+<a name="line395">395: </a>        call <a href="../../../../../docs/manualpages/Sys/PetscPrintf.html#PetscPrintf">PetscPrintf</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>,outputString,ierr)
+<a name="line396">396: </a>      endif
+<a name="line397">397: </a>
+<a name="line398">398: </a>      ! Free work space.  All PETSc objects should be destroyed when they
+<a name="line399">399: </a>      ! are no longer needed.
+<a name="line400">400: </a>
+<a name="line401">401: </a>      call  <a href="../../../../../docs/manualpages/KSP/KSPDestroy.html#KSPDestroy">KSPDestroy</a>(myKsp,ierr); CHKERRA(ierr)
+<a name="line402">402: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecDestroy.html#VecDestroy">VecDestroy</a>(u,ierr); CHKERRA(ierr)
+<a name="line403">403: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecDestroy.html#VecDestroy">VecDestroy</a>(x,ierr); CHKERRA(ierr)
+<a name="line404">404: </a>      call  <a href="../../../../../docs/manualpages/Vec/VecDestroy.html#VecDestroy">VecDestroy</a>(b,ierr); CHKERRA(ierr)
+<a name="line405">405: </a>      call  <a href="../../../../../docs/manualpages/Mat/MatDestroy.html#MatDestroy">MatDestroy</a>(C,ierr); CHKERRA(ierr)
+<a name="line406">406: </a>
+<a name="line407">407: </a>      ! Indicate to PETSc profiling that we're concluding the second stage
+<a name="line408">408: </a>
+<a name="line409">409: </a>      call <a href="../../../../../docs/manualpages/Profiling/PetscLogStagePop.html#PetscLogStagePop">PetscLogStagePop</a>(ierr)
+<a name="line410">410: </a>      CHKERRA(ierr)
+<a name="line411">411: </a>
+<a name="line412">412: </a>      call <a href="../../../../../docs/manualpages/Sys/PetscFinalize.html#PetscFinalize">PetscFinalize</a>(ierr)
+<a name="line413">413: </a>
+
+<a name="line415">415: </a>end program main
+</pre>
+</body>
+
+</html>

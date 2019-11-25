@@ -1,0 +1,90 @@
+<center><a href="ex1.c">Actual source code: ex1.c</a></center><br>
+
+<html>
+<head> <link rel="canonical" href="http://www.mcs.anl.gov/petsc/petsc-current/src/dm/label/examples/tutorials/ex1.c.html" />
+<title></title>
+<meta name="generator" content="c2html 0.9.4">
+<meta name="date" content="2019-06-26T21:34:16+00:00">
+</head>
+
+<body bgcolor="#FFFFFF">
+   <div id="version" align=right><b>petsc-3.11.3 2019-06-26</b></div>
+   <div id="bugreport" align=right><a href="mailto:petsc-maint@mcs.anl.gov?subject=Typo or Error in Documentation &body=Please describe the typo or error in the documentation: petsc-3.11.3 v3.11.3 src/dm/label/examples/tutorials/ex1.c.html "><small>Report Typos and Errors</small></a></div>
+<pre width="80">
+<a name="line1">  1: </a>static char help[] = <font color="#666666">"Tests <a href="../../../../../docs/manualpages/DM/DMLabel.html#DMLabel">DMLabel</a> operations.\n\n"</font>;
+
+<a name="line3">  3: </a> #include <A href="../../../../../include/petscdm.h.html">&lt;petscdm.h&gt;</A>
+<a name="line4">  4: </a> #include <A href="../../../../../include/petscdmplex.h.html">&lt;petscdmplex.h&gt;</A>
+
+<a name="line6">  6: </a><strong><font color="#4169E1"><a name="ViewLabels"></a><a href="../../../../../docs/manualpages/Sys/PetscErrorCode.html#PetscErrorCode">PetscErrorCode</a> ViewLabels(<a href="../../../../../docs/manualpages/DM/DM.html#DM">DM</a> dm, <a href="../../../../../docs/manualpages/Viewer/PetscViewer.html#PetscViewer">PetscViewer</a> viewer)</font></strong>
+<a name="line7">  7: </a>{
+<a name="line8">  8: </a>  <a href="../../../../../docs/manualpages/DM/DMLabel.html#DMLabel">DMLabel</a>        label;
+<a name="line9">  9: </a>  <a href="../../../../../docs/manualpages/IS/IS.html#IS">IS</a>             labelIS;
+<a name="line10"> 10: </a>  const char    *labelName;
+<a name="line11"> 11: </a>  <a href="../../../../../docs/manualpages/Sys/PetscInt.html#PetscInt">PetscInt</a>       numLabels, l;
+
+<a name="line15"> 15: </a>  <font color="#B22222">/* query the number and name of labels*/</font>
+<a name="line16"> 16: </a>  <a href="../../../../../docs/manualpages/DM/DMGetNumLabels.html#DMGetNumLabels">DMGetNumLabels</a>(dm, &amp;numLabels);
+<a name="line17"> 17: </a>  <a href="../../../../../docs/manualpages/Viewer/PetscViewerASCIIPrintf.html#PetscViewerASCIIPrintf">PetscViewerASCIIPrintf</a>(viewer, <font color="#666666">"Number of labels: %d\n"</font>, numLabels);
+<a name="line18"> 18: </a>  <font color="#4169E1">for</font> (l = 0; l &lt; numLabels; ++l) {
+<a name="line19"> 19: </a>    <a href="../../../../../docs/manualpages/DM/DMGetLabelName.html#DMGetLabelName">DMGetLabelName</a>(dm, l, &amp;labelName);
+<a name="line20"> 20: </a>    <a href="../../../../../docs/manualpages/Viewer/PetscViewerASCIIPrintf.html#PetscViewerASCIIPrintf">PetscViewerASCIIPrintf</a>(viewer, <font color="#666666">"Label %d: name: %s\n"</font>, l, labelName);
+<a name="line21"> 21: </a>    <a href="../../../../../docs/manualpages/Viewer/PetscViewerASCIIPrintf.html#PetscViewerASCIIPrintf">PetscViewerASCIIPrintf</a>(viewer, <font color="#666666">"<a href="../../../../../docs/manualpages/IS/IS.html#IS">IS</a> of values\n"</font>);
+<a name="line22"> 22: </a>    <a href="../../../../../docs/manualpages/DM/DMGetLabel.html#DMGetLabel">DMGetLabel</a>(dm, labelName, &amp;label);
+<a name="line23"> 23: </a>    <a href="../../../../../docs/manualpages/DMLABEL/DMLabelGetValueIS.html#DMLabelGetValueIS">DMLabelGetValueIS</a>(label, &amp;labelIS);
+<a name="line24"> 24: </a>    <a href="../../../../../docs/manualpages/Viewer/PetscViewerASCIIPushTab.html#PetscViewerASCIIPushTab">PetscViewerASCIIPushTab</a>(viewer);
+<a name="line25"> 25: </a>    <a href="../../../../../docs/manualpages/IS/ISView.html#ISView">ISView</a>(labelIS, viewer);
+<a name="line26"> 26: </a>    <a href="../../../../../docs/manualpages/Viewer/PetscViewerASCIIPopTab.html#PetscViewerASCIIPopTab">PetscViewerASCIIPopTab</a>(viewer);
+<a name="line27"> 27: </a>    <a href="../../../../../docs/manualpages/IS/ISDestroy.html#ISDestroy">ISDestroy</a>(&amp;labelIS);
+<a name="line28"> 28: </a>    <a href="../../../../../docs/manualpages/Viewer/PetscViewerASCIIPrintf.html#PetscViewerASCIIPrintf">PetscViewerASCIIPrintf</a>(viewer, <font color="#666666">"\n"</font>);
+<a name="line29"> 29: </a>  }
+<a name="line30"> 30: </a>  <font color="#B22222">/* Making sure that string literals work */</font>
+<a name="line31"> 31: </a>  <a href="../../../../../docs/manualpages/Viewer/PetscViewerASCIIPrintf.html#PetscViewerASCIIPrintf">PetscViewerASCIIPrintf</a>(viewer,<font color="#666666">"\n\nCell Set label <a href="../../../../../docs/manualpages/IS/IS.html#IS">IS</a>\n"</font>);
+<a name="line32"> 32: </a>  <a href="../../../../../docs/manualpages/DM/DMGetLabel.html#DMGetLabel">DMGetLabel</a>(dm, <font color="#666666">"Cell Sets"</font>, &amp;label);
+<a name="line33"> 33: </a>  <font color="#4169E1">if</font> (label) {
+<a name="line34"> 34: </a>    <a href="../../../../../docs/manualpages/DMLABEL/DMLabelGetValueIS.html#DMLabelGetValueIS">DMLabelGetValueIS</a>(label, &amp;labelIS);
+<a name="line35"> 35: </a>    <a href="../../../../../docs/manualpages/IS/ISView.html#ISView">ISView</a>(labelIS, viewer);
+<a name="line36"> 36: </a>    <a href="../../../../../docs/manualpages/IS/ISDestroy.html#ISDestroy">ISDestroy</a>(&amp;labelIS);
+<a name="line37"> 37: </a>  }
+<a name="line38"> 38: </a>  <font color="#4169E1">return</font>(0);
+<a name="line39"> 39: </a>}
+
+<a name="line41"> 41: </a><strong><font color="#4169E1"><a name="main"></a>int main(int argc, char **argv)</font></strong>
+<a name="line42"> 42: </a>{
+<a name="line43"> 43: </a>  <a href="../../../../../docs/manualpages/DM/DM.html#DM">DM</a>             dm, dmDist;
+<a name="line44"> 44: </a>  char           filename[PETSC_MAX_PATH_LEN];
+<a name="line45"> 45: </a>  <a href="../../../../../docs/manualpages/Sys/PetscBool.html#PetscBool">PetscBool</a>      interpolate = <a href="../../../../../docs/manualpages/Sys/PETSC_FALSE.html#PETSC_FALSE">PETSC_FALSE</a>;
+
+<a name="line48"> 48: </a>  <font color="#B22222">/* initialize and get options */</font>
+<a name="line49"> 49: </a>  <a href="../../../../../docs/manualpages/Sys/PetscInitialize.html#PetscInitialize">PetscInitialize</a>(&amp;argc, &amp;argv, NULL, help);<font color="#4169E1">if</font> (ierr) <font color="#4169E1">return</font> ierr;
+<a name="line50"> 50: </a>  <a href="../../../../../docs/manualpages/Sys/PetscOptionsBegin.html#PetscOptionsBegin">PetscOptionsBegin</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>, NULL, <font color="#666666">"<a href="../../../../../docs/manualpages/DM/DMLabel.html#DMLabel">DMLabel</a> ex1 Options"</font>, <font color="#666666">"<a href="../../../../../docs/manualpages/DM/DMLabel.html#DMLabel">DMLabel</a>"</font>);
+<a name="line51"> 51: </a>  <a href="../../../../../docs/manualpages/Sys/PetscOptionsString.html#PetscOptionsString">PetscOptionsString</a>(<font color="#666666">"-i"</font>, <font color="#666666">"filename to read"</font>, <font color="#666666">"ex1.c"</font>, filename, filename, <font color="#4169E1">sizeof</font>(filename), NULL);
+<a name="line52"> 52: </a>  <a href="../../../../../docs/manualpages/Sys/PetscOptionsBool.html#PetscOptionsBool">PetscOptionsBool</a>(<font color="#666666">"-interpolate"</font>, <font color="#666666">"Generate intermediate mesh elements"</font>, <font color="#666666">"ex1.c"</font>, interpolate, &amp;interpolate, NULL);
+<a name="line53"> 53: </a>  <a href="../../../../../docs/manualpages/Sys/PetscOptionsEnd.html#PetscOptionsEnd">PetscOptionsEnd</a>();
+
+<a name="line55"> 55: </a>  <font color="#B22222">/* create and distribute <a href="../../../../../docs/manualpages/DM/DM.html#DM">DM</a> */</font>
+<a name="line56"> 56: </a>  <a href="../../../../../docs/manualpages/DMPLEX/DMPlexCreateFromFile.html#DMPlexCreateFromFile">DMPlexCreateFromFile</a>(<a href="../../../../../docs/manualpages/Sys/PETSC_COMM_WORLD.html#PETSC_COMM_WORLD">PETSC_COMM_WORLD</a>, filename, interpolate, &amp;dm);
+<a name="line57"> 57: </a>  <a href="../../../../../docs/manualpages/DMPLEX/DMPlexDistribute.html#DMPlexDistribute">DMPlexDistribute</a>(dm, 0, NULL, &amp;dmDist);
+<a name="line58"> 58: </a>  <font color="#4169E1">if</font> (dmDist) {
+<a name="line59"> 59: </a>    <a href="../../../../../docs/manualpages/DM/DMDestroy.html#DMDestroy">DMDestroy</a>(&amp;dm);
+<a name="line60"> 60: </a>    dm   = dmDist;
+<a name="line61"> 61: </a>  }
+<a name="line62"> 62: </a>  <a href="../../../../../docs/manualpages/DM/DMSetFromOptions.html#DMSetFromOptions">DMSetFromOptions</a>(dm);
+<a name="line63"> 63: </a>  ViewLabels(dm, <a href="../../../../../docs/manualpages/Viewer/PETSC_VIEWER_STDOUT_WORLD.html#PETSC_VIEWER_STDOUT_WORLD">PETSC_VIEWER_STDOUT_WORLD</a>);
+<a name="line64"> 64: </a>  <a href="../../../../../docs/manualpages/DM/DMDestroy.html#DMDestroy">DMDestroy</a>(&amp;dm);
+<a name="line65"> 65: </a>  <a href="../../../../../docs/manualpages/Sys/PetscFinalize.html#PetscFinalize">PetscFinalize</a>();
+<a name="line66"> 66: </a>  <font color="#4169E1">return</font> ierr;
+<a name="line67"> 67: </a>}
+
+<a name="line69"> 69: </a><font color="#B22222">/*TEST</font>
+
+<a name="line71"> 71: </a><font color="#B22222">  test:</font>
+<a name="line72"> 72: </a><font color="#B22222">    suffix: 0</font>
+<a name="line73"> 73: </a><font color="#B22222">    args: -i ${wPETSC_DIR}/share/petsc/datafiles/meshes/blockcylinder-50.exo -interpolate</font>
+<a name="line74"> 74: </a><font color="#B22222">    requires: exodusii</font>
+
+<a name="line76"> 76: </a><font color="#B22222">TEST*/</font>
+</pre>
+</body>
+
+</html>

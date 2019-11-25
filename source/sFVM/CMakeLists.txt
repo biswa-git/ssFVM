@@ -1,0 +1,22 @@
+include_directories(${CMAKE_SOURCE_DIR}/source/ThirdParty/blitz/include)
+include_directories(${CMAKE_SOURCE_DIR}/source/ThirdParty/lis/include)
+include_directories(${CMAKE_SOURCE_DIR}/source/ThirdParty/CGNS/include)
+add_executable(sFVM
+    #Block.cpp
+    CGNS_BoundaryCondition.cpp
+    CGNS_Base.cpp
+    CGNS_Interface.cpp
+    CGNS_Reader.cpp
+    CGNS_Zone.cpp
+    #Face.cpp
+    main.cpp
+    Mesh.cpp
+    Solution.cpp
+    Vector.cpp
+    Vertex.cpp
+)
+target_link_libraries(sFVM
+    ${CMAKE_SOURCE_DIR}/source/ThirdParty/blitz/lib/libblitz.a
+    ${CMAKE_SOURCE_DIR}/source/ThirdParty/lis/lib/liblis.a
+    ${CMAKE_SOURCE_DIR}/source/ThirdParty/CGNS/lib/libcgns.a)
+install(TARGETS sFVM DESTINATION ${CMAKE_SOURCE_DIR}/exe)

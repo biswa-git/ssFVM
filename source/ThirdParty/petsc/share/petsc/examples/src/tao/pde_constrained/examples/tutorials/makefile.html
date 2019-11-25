@@ -1,0 +1,45 @@
+
+<html>
+<head> <link rel="canonical" href="http://www.mcs.anl.gov/petsc/petsc-current/src/tao/pde_constrained/examples/tutorials/makefile.html" />
+<title></title>
+<meta name="generator" content="c2html 0.9.4">
+<meta name="date" content="2019-06-26T22:09:51+00:00">
+</head>
+
+<body bgcolor="#FFFFFF">
+   <div id="version" align=right><b>petsc-3.11.3 2019-06-26</b></div>
+   <div id="bugreport" align=right><a href="mailto:petsc-maint@mcs.anl.gov?subject=Typo or Error in Documentation &body=Please describe the typo or error in the documentation: petsc-3.11.3 v3.11.3 src/tao/pde_constrained/examples/tutorials/makefile.html "><small>Report Typos and Errors</small></a></div>
+<pre width="80">CFLAGS           =
+FFLAGS		 =
+CPPFLAGS         =
+FPPFLAGS         =
+LOCDIR		 = src/tao/pde_constrained/examples/tutorials/
+MANSEC           =
+EXAMPLESC	 = elliptic.c parabolic.c hyperbolic.c
+TUTORIALS        = elliptic.c parabolic.c hyperbolic.c
+EXAMPLESF	 =
+EXAMPLESCH	 =
+EXAMPLESFH       =
+EXAMPLESMATLAB   =
+CLEANFILES       = elliptic parabolic hyperbolic
+
+include ${PETSC_DIR}/lib/petsc/conf/variables
+include ${PETSC_DIR}/lib/petsc/conf/rules
+
+<strong><font color="#FF0000">parabolic:</font></strong> parabolic.o chkopts
+	-${CLINKER} -o parabolic parabolic.o ${PETSC_TAO_LIB}
+	${RM} parabolic.o
+
+<strong><font color="#FF0000">hyperbolic:</font></strong> hyperbolic.o chkopts
+	-${CLINKER} -o hyperbolic hyperbolic.o ${PETSC_TAO_LIB}
+	${RM} hyperbolic.o
+
+<strong><font color="#FF0000">elliptic:</font></strong> elliptic.o chkopts
+	-${CLINKER} -o elliptic elliptic.o ${PETSC_TAO_LIB}
+	${RM} elliptic.o
+
+include ${PETSC_DIR}/lib/petsc/conf/test
+</pre>
+</body>
+
+</html>
